@@ -27,7 +27,7 @@ connectors are mesh boxes.
 ```bash
 npm ci
 npm run dev            # local dev
-npm run build          # static export to out/
+npm run build          # prebuild env check -> static export -> postbuild OG freeze + artifact check
 npm run preview        # python -m http.server 3000 --directory out
 npm run lint
 npm run typecheck
@@ -37,21 +37,31 @@ npm run test:contrast  # WCAG contrast for dark/light tokens
 npm run test:seo       # keyword rows + 120-day freshness
 npm run csp            # add CSP meta to every HTML, write out/_headers
 npm run verify:csp     # reject unsafe-inline/eval, missing hashes, external resources
+npm run verify:out     # canonical/hreflang/sitemap/robots/JSON-LD/OG/placeholder scan
 npm run verify:site    # Playwright routes, hreflang, JSON-LD, axe, reduced-motion, no-WebGL
+npm run test:e2e       # Playwright runtime errors, keyboard focus, reduced-motion, CLS
 npm run lighthouse     # desktop preset
 ```
 
-`verify:site` expects a server at `SITE_BASE_URL` (default `http://127.0.0.1:3100`).
-Set `CHROME_PATH` to a Chromium binary if Playwright's own browser is not installed.
-It writes `../plans/证据/ui-v1/site-verify.json`.
+`npm run build` runs three gates in order: `scripts/check-env.mjs` (public origin),
+`next build`, then `scripts/gen-og.mjs` + `scripts/check-out.mjs` (stable
+`/og/{zh,en}.png` paths and SEO artifact assertions). A missing or placeholder
+`NEXT_PUBLIC_SITE_URL` stops the build instead of silently shipping `localhost`
+canonical URLs.
+
+`verify:site` and `test:e2e` expect a server at `SITE_BASE_URL` (default
+`http://127.0.0.1:3100`); Playwright reuses an already-running one. Set
+`CHROME_PATH` to a Chromium binary if Playwright's own browser is not installed.
+`verify:site` writes `../plans/证据/ui-v1/site-verify.json`.
 
 ## Environment
 
 | Variable | Use |
 |---|---|
-| `NEXT_PUBLIC_SITE_URL` | Canonical/OG/hreflang origin. Defaults to `http://localhost:3000` for local builds; set it before any public build. |
+| `NEXT_PUBLIC_SITE_URL` | Required for a production build. Canonical/OG/hreflang/sitemap origin, origin only (no path). |
+| `SITE_ALLOW_PLACEHOLDER` | Set to `1` for a local-only build: `NEXT_PUBLIC_SITE_URL` may be unset, canonical uses `http://localhost:3000`, and the footer renders a "local preview" notice. |
 | `SITE_BASE_PATH` | Sub-path hosting (for example a GitHub Pages project path). Empty by default. |
-| `SITE_BASE_URL` | Base URL used by `verify:site`. |
+| `SITE_BASE_URL` | Base URL used by `verify:site` and `test:e2e`. |
 | `CHROME_PATH` | Chromium executable for Playwright/Lighthouse when not installed by the package. |
 
 ## Security model
@@ -89,31 +99,45 @@ headers.
 - No search-volume numbers are claimed. `seo/keywords.json` is an intent matrix;
   Search Console backfill is pending.
 
-## Verification snapshot (2026-11-06)
+## Verification snapshot (2026-11-08)
 
 | Gate | Result |
 |---|---|
-| `npm run build` | 20 static routes, `out/404.html` present |
-| `npm run verify:csp` | 17 HTML files, 18 inline-script hashes |
-| `npm run test:content` | 7/7 |
+| `npm run build` (no env) | fails: `NEXT_PUBLIC_SITE_URL is required for a production build` |
+| `npm run build` (`NEXT_PUBLIC_SITE_URL=https://cf-solver.dev`) | 20 static routes, `out/404.html`, no `localhost`/placeholder leakage |
+| `npm run verify:csp` | 17 HTML files, 20 inline-script hashes |
+| `npm run verify:out` | 12 indexable pages, 2 noindex pages, 404 noindex, OG 1200×630 |
+| `npm run test:content` | 10/10 (adds legal copy, benchmark-id references, hardcoded-number scan) |
 | `npm run test:tokens` | 34 files, 0 hardcoded colors |
 | `npm run test:contrast` | dark/light text ≥ 4.5, focus ≥ 3 |
 | `npm run verify:site` | 14 routes, axe 0, reduced-motion static, no-WebGL static |
-| Lighthouse desktop | Perf 100 / A11y 100 / BP 100 / SEO 100; LCP 0.3s, CLS 0, TBT 0ms |
-| Lighthouse mobile | Perf 98 / A11y 100 / BP 100 / SEO 100; LCP 1.2s/1.1s, TBT 150/140ms |
-| Initial JS gzip | 228.4 KB |
-| 3D chunk gzip | 241.8 KB |
+| `npm run test:e2e` | 18/18 (runtime errors, keyboard focus ring, reduced-motion, scene controls, static controls, idle 3D, CLS) |
+| Lighthouse desktop (2026-11-08 re-run) | Perf 100 / A11y 100 / BP 100 / SEO 100; LCP 0.4s/0.3s, CLS 0, TBT 0ms |
+| Lighthouse mobile (2026-11-06) | Perf 98 / A11y 100 / BP 100 / SEO 100; LCP 1.2s/1.1s, TBT 150/140ms |
+| Initial JS gzip | 227.2 KB (budget 250 KB) |
+| 3D chunk gzip | 236.2 KB (budget 260 KB) |
 | CSS gzip | 6.7 KB |
+| `npm audit --omit=dev` | 0 vulnerabilities |
 
 The initial-JS and 3D-chunk numbers exceed the first draft's 150/220 KB estimates.
 The measured framework baseline (Next 16 + React 19 + motion) and three.js make those
 caps unattainable without dropping the chosen stack; the budgets were revised to
 250/260 KB with no regression allowed.
 
+The Lighthouse desktop figures were re-measured on 2026-11-08 after the metadata
+and OG changes. The mobile run is still the 2026-11-06 measurement; the 2026-11-08
+changes add no bundle and no third-party request.
+
 ## Known gaps
 
 - Real low-end hardware was not tested. The 3D fallback was exercised with Chromium's
   SwiftShader software renderer and CPU throttling; see `plans/证据/ui-v1/3d-fps.json`.
 - Hosting headers were not tested because deployment was intentionally left local.
+  `NEXT_PUBLIC_SITE_URL` must be supplied at build time before any public build; the
+  build fails without it.
+- `npm audit --omit=dev` is clean. The Lighthouse toolchain (`@lhci/cli` →
+  `lighthouse` → `puppeteer-core`/`proxy-agent`/`basic-ftp`) carries 9 high advisories
+  that only ship as dev dependencies and never reach `out/`; the published fix is a
+  breaking downgrade to 0.13.0, so it is recorded instead of applied.
 - Search volumes were not purchased or scraped; only the intent matrix exists.
 - The English copy has not had a native-speaker review.

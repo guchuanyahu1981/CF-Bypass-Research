@@ -1,3 +1,4 @@
 command: python -m pytest tests/test_console.py tests/test_statuspage.py -q
-result: 34 passed in 0.74s
-baseline: 24 tests; added 10 (tokens single source, wedged contrast, noindex, focus-visible, reduced-motion).
+result: 36 passed in 0.73s
+baseline: 24 tests; added 12 (tokens single source, wedged contrast, noindex, focus-visible, reduced-motion, inline favicon)
+rerun: 2026-11-08

@@ -1,0 +1,41 @@
+{
+  "measuredAt": "2026-11-08",
+  "siteUrl": "https://cf-solver.dev",
+  "placeholder": false,
+  "indexable": [
+    "/",
+    "/how-it-works/",
+    "/benchmarks/",
+    "/docs/",
+    "/security/",
+    "/changelog/",
+    "/en/",
+    "/en/how-it-works/",
+    "/en/benchmarks/",
+    "/en/docs/",
+    "/en/security/",
+    "/en/changelog/"
+  ],
+  "noindex": [
+    "/styleguide/",
+    "/en/styleguide/"
+  ],
+  "notFound": [
+    "out/404.html",
+    "out/404/index.html",
+    "out/_not-found/index.html"
+  ],
+  "ogImages": [
+    "/og/zh.png",
+    "/og/en.png"
+  ],
+  "assertions": [
+    "canonical equals the sitemap URL",
+    "3 hreflang alternates per page, zh-CN and en differ",
+    "og:url/og:image/og:title/og:description present",
+    "twitter:card is summary_large_image",
+    "JSON-LD parses and carries @type/@graph",
+    "robots.txt declares the sitemap and disallows /styleguide/",
+    "no /:3000 placeholder origin outside placeholder builds"
+  ]
+}

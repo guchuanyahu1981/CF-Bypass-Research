@@ -1,6 +1,7 @@
 'use client';
 
 import { usePathname } from 'next/navigation';
+import { useEffect, useState } from 'react';
 import { DICT, NAV_KEYS, PAGES, SITE, type Locale } from '@/content/site';
 import ThemeToggle from '@/components/ThemeToggle';
 
@@ -17,9 +18,17 @@ export default function SiteHeader({ locale }: { locale: Locale }) {
   const d = DICT[locale];
   const pathname = usePathname();
   const other: Locale = locale === 'zh' ? 'en' : 'zh';
+  const [scrolled, setScrolled] = useState(false);
+
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 24);
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
 
   return (
-    <header className="site-header">
+    <header className={`site-header${scrolled ? ' site-header--scrolled' : ''}`}>
       <div className="container site-header__inner">
         <a className="brand" href={PAGES.home[locale]}>
           <span className="brand__mark" aria-hidden="true" />

@@ -1,0 +1,81 @@
+{
+  "task_id": "SITE-UI-V1",
+  "status": "done",
+  "timestamp": "2026-11-08T03:20:00+08:00",
+  "baseline_commit": "74c72db",
+  "goal": "把《视觉交互与可发现性设计指南 V1》里声称已落地的部分核实到真实实现；补齐空门禁与缺失交互；文档与实现对齐。",
+  "commands_executed": [
+    { "cmd": "npm run build (no env)", "exit_code": 1, "note": "check-env 拒绝缺失 NEXT_PUBLIC_SITE_URL" },
+    { "cmd": "NEXT_PUBLIC_SITE_URL=https://cf-solver.dev npm run build", "exit_code": 0, "note": "20 static routes; postbuild gen-og + check-out" },
+    { "cmd": "SITE_ALLOW_PLACEHOLDER=1 npm run build", "exit_code": 0, "note": "placeholder build; footer renders local-preview notice" },
+    { "cmd": "npm run verify:out", "exit_code": 0, "note": "12 indexable, 2 noindex, 404 noindex, OG 1200x630" },
+    { "cmd": "npm run verify:csp", "exit_code": 0, "note": "17 HTML / 20 hashes" },
+    { "cmd": "npm run test:content", "exit_code": 0, "note": "10/10" },
+    { "cmd": "npm run test:tokens / test:contrast / test:seo", "exit_code": 0, "note": "34 files 0 hardcoded colors; contrast ok; 12 keyword rows" },
+    { "cmd": "npm run verify:site", "exit_code": 0, "note": "14 routes, axe 0, reduced/no-WebGL static" },
+    { "cmd": "npx playwright test", "exit_code": 0, "note": "18/18 (scene controls, static controls, idle 3D, CLS)" },
+    { "cmd": "npx lhci autorun --config=lighthouserc.json", "exit_code": 0, "note": "desktop 100/100/100/100; LCP 0.4/0.3s; CLS 0; TBT 0ms" },
+    { "cmd": "npm audit --omit=dev", "exit_code": 0, "note": "0 production vulnerabilities; 9 high are dev-only @lhci/cli chain" },
+    { "cmd": "pytest tests/ -q --cov=solver --cov=captchas --cov-report=json:coverage.json", "exit_code": 0, "note": "1023 passed, 7 skipped" },
+    { "cmd": "node scripts/check-coverage.mjs", "exit_code": 0, "note": "64 modules pass; solver 89.65% (>=80), captchas 22.21% (>=20)" },
+    { "cmd": "python scripts/verify_ui_e2e.py", "exit_code": 0, "note": "35/35 with CHROME_PATH=systen Chrome" },
+    { "cmd": "node scripts/validate-docs.mjs", "exit_code": 0, "note": "9 doc numbers match facts" },
+    { "cmd": "node scripts/validate-findings.mjs", "exit_code": 0, "note": "54 findings" },
+    { "cmd": "node scripts/validate-openapi.mjs", "exit_code": 0, "note": "14 operations match source" }
+  ],
+  "files_changed": [
+    "site/scripts/check-env.mjs (new)",
+    "site/scripts/check-out.mjs (new)",
+    "site/scripts/gen-og.mjs (new)",
+    "site/playwright.config.ts (new)",
+    "site/tests/e2e/site.spec.ts (new)",
+    "site/components/SceneShell.tsx",
+    "site/components/three/ChallengeWall.tsx",
+    "site/components/three/Pipeline.tsx",
+    "site/components/pages/Home.tsx",
+    "site/components/SiteHeader.tsx",
+    "site/components/SiteFooter.tsx",
+    "site/content/site.ts",
+    "site/lib/metadata.ts",
+    "site/app/globals.css",
+    "site/app/sitemap.ts",
+    "site/package.json",
+    "site/tests/content/content.test.mjs",
+    "solver/statuspage.py",
+    "solver/console_html.py",
+    "tests/test_console.py",
+    "tests/test_statuspage.py",
+    "tests/test_observability.py",
+    "tests/test_detect_source.py",
+    "scripts/verify_ui_e2e.py",
+    ".github/workflows/site-ci.yml",
+    "plans/证据/ui-v1/*"
+  ],
+  "tests": [
+    { "name": "site content", "type": "unit", "status": "pass", "count": 10 },
+    { "name": "site e2e", "type": "e2e", "status": "pass", "count": 18 },
+    { "name": "site verify", "type": "browser", "status": "pass", "count": 14 },
+    { "name": "python full", "type": "unit+integration", "status": "pass", "count": 1023 },
+    { "name": "ui e2e", "type": "e2e", "status": "pass", "count": 35 }
+  ],
+  "seams_touched": [
+    "build → postbuild (gen-og + check-out)",
+    "CSP generation → _headers",
+    "metadata → sitemap/robots/OG/hreflang",
+    "SceneShell → R3F chunks + DOM controls",
+    "statuspage/console_html → inline favicon + CSP img-src data:"
+  ],
+  "browser_validation": {
+    "tool": "Playwright with system Chrome (CHROME_PATH)",
+    "routes": 14,
+    "axe": 0,
+    "fallbacks": "reduced-motion=static, no-WebGL=static"
+  },
+  "limitations": [
+    "Real hosting headers (_headers, HSTS) not verified: deployment intentionally local, no domain or Pages token.",
+    "Real low-end hardware FPS not measured; only SwiftShader synthetic data.",
+    "Mobile Lighthouse figures remain the 2026-11-06 run.",
+    "English copy not reviewed by a native speaker.",
+    "9 high npm advisories remain in the dev-only @lhci/cli chain; upstream only offers a breaking downgrade."
+  ]
+}

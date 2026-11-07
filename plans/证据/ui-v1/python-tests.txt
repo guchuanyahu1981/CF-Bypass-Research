@@ -1,3 +1,4 @@
 command: python -m pytest -q
-result: 1021 passed, 7 skipped in 127.76s
-note: 10 new UI tests (5 per page) are included; 7 skips are the pre-existing research-assertion skips.
+result: 1023 passed, 7 skipped in 127.44s
+note: 10->12 new UI tests (5->6 themes per page); 7 skips are the pre-existing research-assertion skips. The 3 test_detect_source failures seen on Windows were a GBK decode defect in _run_gen (subprocess text mode without encoding); fixed with encoding="utf-8", errors="replace".
+rerun: 2026-11-08

@@ -205,3 +205,13 @@ def test_console_has_focus_visible_rule():
 
 def test_console_has_reduced_motion_block():
     assert "prefers-reduced-motion" in console_html.CONSOLE_PAGE_HTML
+
+
+def test_console_favicon_is_inline_svg():
+    """真实 Chrome 会请求 /favicon.ico；没有声明就是 404 + console error。"""
+    match = re.search(r'<link[^>]+rel="icon"[^>]+href="([^"]+)"', console_html.CONSOLE_PAGE_HTML)
+    assert match, "missing rel=icon"
+    href = match.group(1)
+    assert href.startswith("data:image/svg+xml;base64,"), href
+    # 内联 data URI 里的 xmlns 是命名空间声明，不会发起请求；这里断言的是没有外链资源。
+    assert not re.search(r"(src|href)\s*=\s*[\"']https?://", console_html.CONSOLE_PAGE_HTML)

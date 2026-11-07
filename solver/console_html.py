@@ -40,6 +40,7 @@ CONSOLE_PAGE_HTML = """<!doctype html>
 <meta name="robots" content="noindex,nofollow">
 <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0f1419">
 <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f6f8fa">
+<link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiI+PHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iOCIgZmlsbD0iIzRERTNDMSIvPjxwYXRoIGQ9Ik0xNiA3bDggNHY2YzAgNS0zLjUgOC04IDktNC41LTEtOC00LTgtOXYtNnoiIGZpbGw9IiMwNjA4MEQiLz48L3N2Zz4=">
 <title>CF 求解服务 · 只读控制台</title>
 <style>
 __UI_TOKENS__

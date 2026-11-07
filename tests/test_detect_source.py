@@ -68,7 +68,7 @@ def test_fixture_matrix_classifies_each_vendor():
 def _run_gen(*args: str) -> tuple[int, str]:
     proc = subprocess.run(
         [sys.executable, str(GEN), *args],
-        capture_output=True, text=True, timeout=60, cwd=str(ROOT),
+        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60, cwd=str(ROOT),
     )
     return proc.returncode, proc.stdout + proc.stderr
 

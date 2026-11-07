@@ -42,6 +42,8 @@ jobs:
 
       - name: Build
         run: npm run build
+        env:
+          NEXT_PUBLIC_SITE_URL: https://ci.cf-solver.dev
 
       - name: CSP generate + verify
         run: |
@@ -66,6 +68,9 @@ jobs:
 
       - name: Site verification (routes, hreflang, JSON-LD, axe, fallbacks)
         run: npm run verify:site
+
+      - name: E2E (runtime errors, keyboard focus, reduced-motion, CLS)
+        run: npm run test:e2e
 
       - name: Lighthouse (desktop)
         run: |

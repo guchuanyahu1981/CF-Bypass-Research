@@ -3,18 +3,41 @@
 import dynamic from 'next/dynamic';
 import { useEffect, useRef, useState } from 'react';
 import type { Locale } from '@/content/site';
+import { BENCHMARKS, formatValue } from '@/data/benchmarks';
 import SceneBoundary from './three/SceneBoundary';
 
 const ChallengeWall = dynamic(() => import('./three/ChallengeWall'), { ssr: false, loading: () => null });
-
-const WALL_LABELS = ['jsd', 'managed', 'turnstile'];
-const PIPE_LABELS = ['Domain', 'Detect', 'Backend', 'Token', 'Replay'];
 const Pipeline = dynamic(() => import('./three/Pipeline'), { ssr: false, loading: () => null });
 
 type Tier = 'full' | 'lite' | 'static';
 type Variant = 'wall' | 'pipeline';
 
-function detectTier(): Tier {
+type SceneNode = {
+  key: string;
+  label: string;
+  benchmarkId?: string;
+  note?: { zh: string; en: string };
+};
+
+const WALL_NODES: SceneNode[] = [
+  { key: 'jsd', label: 'jsd', benchmarkId: 'solve.cfsolve.same-site' },
+  { key: 'managed', label: 'managed', benchmarkId: 'solve.camoufox.same-site' },
+  { key: 'turnstile', label: 'turnstile', benchmarkId: 'turnstile.official' },
+];
+
+const PIPE_NODES: SceneNode[] = [
+  { key: 'domain', label: 'Domain' },
+  { key: 'detect', label: 'Detect' },
+  {
+    key: 'backend',
+    label: 'Backend',
+    note: { zh: 'cfsolve → pydoll → Camoufox → FlareSolverr', en: 'cfsolve → pydoll → Camoufox → FlareSolverr' },
+  },
+  { key: 'token', label: 'Token', benchmarkId: 'clearance.bytes' },
+  { key: 'replay', label: 'Replay', benchmarkId: 'replay.cached.p99' },
+];
+
+function tierBadge() {
   if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return 'static';
   const nav = navigator as Navigator & {
     deviceMemory?: number;
@@ -96,15 +119,33 @@ function PipelineFallback({ locale }: { locale: Locale }) {
   );
 }
 
+function shortValue(benchmarkId: string): string {
+  const benchmark = BENCHMARKS.find((item) => item.id === benchmarkId);
+  if (!benchmark) return '';
+  return `${benchmark.value}${benchmark.unit === 'percent' ? '%' : benchmark.unit === 'count' ? '' : benchmark.unit}`;
+}
+
+function describe(node: SceneNode, locale: Locale): string {
+  if (node.benchmarkId) {
+    const benchmark = BENCHMARKS.find((item) => item.id === node.benchmarkId);
+    if (benchmark) {
+      return `${formatValue(benchmark, locale)} · ${benchmark.conditions[locale]}`;
+    }
+  }
+  return node.note?.[locale] ?? (locale === 'zh' ? '流水线阶段' : 'Pipeline stage');
+}
+
 export default function SceneShell({ variant, locale }: { variant: Variant; locale: Locale }) {
+  const nodes = variant === 'wall' ? WALL_NODES : PIPE_NODES;
   const [tier, setTier] = useState<Tier>('static');
   const [armed, setArmed] = useState(false);
+  const [selected, setSelected] = useState<string>(() => (variant === 'wall' ? 'jsd' : 'backend'));
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     // Capability detection must run after hydration; SSR renders the static tier.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setTier(detectTier());
+    setTier(tierBadge());
   }, []);
 
   useEffect(() => {
@@ -121,7 +162,8 @@ export default function SceneShell({ variant, locale }: { variant: Variant; loca
       io.observe(el);
       return () => io.disconnect();
     }
-    const ric = (window as Window & { requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number }).requestIdleCallback;
+    const ric = (window as Window & { requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number })
+      .requestIdleCallback;
     if (ric) {
       const id = ric(() => setArmed(true), { timeout: 2000 });
       return () => {
@@ -134,6 +176,7 @@ export default function SceneShell({ variant, locale }: { variant: Variant; loca
   }, [tier, variant]);
 
   const Fallback = variant === 'wall' ? <WallFallback locale={locale} /> : <PipelineFallback locale={locale} />;
+  const current = nodes.find((node) => node.key === selected) ?? nodes[0];
   const caption =
     locale === 'zh'
       ? tier === 'static'
@@ -155,18 +198,41 @@ export default function SceneShell({ variant, locale }: { variant: Variant; loca
       ) : (
         <div aria-hidden="true" style={{ position: 'absolute', inset: 0 }}>
           <SceneBoundary fallback={Fallback}>
-            {variant === 'wall' ? <ChallengeWall tier={tier} /> : <Pipeline tier={tier} />}
+            {variant === 'wall' ? <ChallengeWall tier={tier} selected={selected} /> : <Pipeline tier={tier} selected={selected} />}
           </SceneBoundary>
         </div>
       )}
+
+      <span className="scene__caption">{caption}</span>
+
+      <div
+        className="scene__controls"
+        role="group"
+        aria-label={locale === 'zh' ? '选择场景节点' : 'Select a scene node'}
+      >
+        {nodes.map((node) => (
+          <button
+            key={node.key}
+            type="button"
+            aria-pressed={selected === node.key}
+            onClick={() => setSelected(node.key)}
+          >
+            {node.label}
+          </button>
+        ))}
+      </div>
+
+      <p className="scene__panel" aria-live="polite">
+        <strong>{current.label}</strong> <span>{describe(current, locale)}</span>
+      </p>
+
       <div className="scene__labels" aria-hidden="true">
-        {(variant === 'wall' ? WALL_LABELS : PIPE_LABELS).map((label) => (
-          <span className="scene__label" key={label}>
-            {label}
+        {nodes.map((node) => (
+          <span className="scene__label" key={node.key}>
+            {node.key === 'backend' ? 'Backend' : `${node.label}${node.benchmarkId ? ` · ${shortValue(node.benchmarkId)}` : ''}`}
           </span>
         ))}
       </div>
-      <span className="scene__caption">{caption}</span>
     </div>
   );
 }

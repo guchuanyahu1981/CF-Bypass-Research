@@ -1,5 +1,5 @@
 import type { MetadataRoute } from 'next';
-import { PAGES } from '@/content/site';
+import { PAGES, SITE } from '@/content/site';
 import { allRoutes } from '@/lib/routes';
 import { SITE_URL } from '@/lib/metadata';
 
@@ -10,7 +10,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     .filter((route) => PAGES[route.key].index)
     .map((route) => ({
       url: `${SITE_URL}${route.path}`,
-      lastModified: new Date('2026-11-06'),
+      lastModified: SITE.updatedAt,
       changeFrequency: 'weekly' as const,
       priority: route.key === 'home' ? 1 : 0.7,
       alternates: {

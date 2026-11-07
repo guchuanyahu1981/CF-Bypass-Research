@@ -64,9 +64,14 @@ a:hover { color: color-mix(in srgb, var(--primary) 78%, var(--ink)); }
 
 .site-header {
   position: sticky; top: 0; z-index: 40;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid transparent;
+  background: transparent;
+  transition: background-color 180ms ease, border-color 180ms ease;
+}
+.site-header--scrolled {
+  border-bottom-color: var(--line);
   background: color-mix(in srgb, var(--bg) 82%, transparent);
-  backdrop-filter: blur(10px);
+  backdrop-filter: blur(8px);
 }
 .site-header__inner {
   display: flex; align-items: center; gap: 18px; min-height: 64px;
@@ -174,25 +179,37 @@ a:hover { color: color-mix(in srgb, var(--primary) 78%, var(--ink)); }
   overflow: hidden;
 }
 .scene canvas { display: block; width: 100% !important; height: 100% !important; }
-.scene__fallback { display: grid; place-items: center; min-height: 380px; padding: 24px; }
-.scene__fallback svg { width: min(100%, 560px); height: auto; }
+.scene__fallback { display: grid; place-items: center; min-height: 380px; padding: 16px 24px 100px; }
+.scene__fallback svg { width: min(100%, 460px); height: auto; }
 .scene__labels {
   position: absolute; left: 0; right: 0; top: 52%; transform: translateY(-50%);
   display: flex; justify-content: space-around; padding: 0 6%; pointer-events: none;
 }
-.scene--static .scene__labels { top: 36%; }
+.scene--static .scene__labels { top: 34%; }
 .scene__label {
   padding: 4px 8px; border-radius: 8px; border: 1px solid var(--line);
   background: color-mix(in srgb, var(--surface) 82%, transparent); color: var(--ink);
   font-size: 11px; font-weight: 600; white-space: nowrap;
 }
-.scene__caption { position: absolute; left: 14px; bottom: 12px; color: var(--muted); font-size: 11px; }
-.scene__controls { position: absolute; inset: auto 14px 14px auto; display: flex; gap: 6px; }
-.scene__controls button {
-  width: 44px; height: 44px; border-radius: 10px; border: 1px solid var(--line);
-  background: var(--surface); color: var(--ink); cursor: pointer;
+.scene__caption { position: absolute; left: 14px; top: 12px; right: 14px; color: var(--muted); font-size: 11px; }
+.scene__controls {
+  position: absolute; left: 12px; right: 12px; bottom: 12px;
+  display: flex; flex-wrap: wrap; gap: 6px; justify-content: center;
 }
-.scene--static .scene__controls { display: none; }
+.scene__controls button {
+  min-width: 44px; height: 44px; padding: 0 10px; border-radius: 10px; border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface) 90%, transparent); color: var(--ink);
+  cursor: pointer; font-size: 12px; font-weight: 600;
+  transition: border-color 140ms ease, color 140ms ease;
+}
+.scene__controls button[aria-pressed="true"] { border-color: var(--primary); color: var(--primary); }
+.scene__panel {
+  position: absolute; left: 12px; right: 12px; bottom: 64px; margin: 0;
+  padding: 8px 12px; border-radius: 10px; border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  color: var(--ink); font-size: 12px; line-height: 1.5;
+}
+.scene__panel strong { color: var(--primary); margin-right: 6px; }
 
 .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
 table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
@@ -229,6 +246,7 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: now
 .footer p a { display: inline-block; padding: 4px 0; margin: 2px 0; }
 .footer__legal { margin-top: 22px; display: grid; gap: 6px; }
 .footer__legal p { margin: 0; }
+.footer__preview { color: var(--warning); border-left: 2px solid var(--warning); padding-left: 10px; }
 
 .styleguide__swatches { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
 .swatch { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--surface); }
@@ -268,6 +286,13 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: now
   .scene, .scene__fallback { min-height: 300px; }
   .section { padding: 40px 0; }
 }
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.faq details > div { animation: fade-in 220ms ease; }
+.scene canvas { animation: fade-in 400ms ease; }
 
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }

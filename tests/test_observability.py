@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 
 import pytest
@@ -258,11 +259,15 @@ def test_status_page_points_at_the_real_endpoints(live_server):
 
 
 def test_status_page_has_no_external_resources(live_server):
-    """零依赖：不引 CDN、不引字体、不引图标 —— 离线环境也必须能打开。"""
+    """零依赖：不引 CDN、不引字体、不引外部图标 —— 离线环境也必须能打开。
+
+    favicon 是内联 base64 SVG（`<link rel="icon" href="data:...">`），不发起请求。
+    """
     _, body = _get(live_server, "/")
     lowered = body.lower()
-    for bad in ("http://", "https://", "<link ", "src=\"//"):
+    for bad in ("http://", "https://", "src=\"//"):
         assert bad not in lowered, f"页面引用了外部资源：{bad}"
+    assert not re.search(r'<link\b(?![^>]*href="data:)', lowered), "页面引用了非内联的 link"
 
 
 def test_status_page_buttons_are_real_and_wired(live_server):

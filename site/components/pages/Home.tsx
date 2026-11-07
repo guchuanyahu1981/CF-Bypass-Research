@@ -31,6 +31,10 @@ export default function Home({ locale }: { locale: Locale }) {
     .map((id) => BENCHMARKS.find((b) => b.id === id))
     .filter((b): b is NonNullable<typeof b> => Boolean(b));
 
+  const summaryRows = ['solve.cfsolve.same-site', 'replay.cached.p99', 'route.auto.no-shield', 'clearance.bytes']
+    .map((id) => BENCHMARKS.find((b) => b.id === id))
+    .filter((b): b is NonNullable<typeof b> => Boolean(b));
+
   return (
     <>
       <JsonLd data={softwareApplication(locale)} />
@@ -50,9 +54,18 @@ export default function Home({ locale }: { locale: Locale }) {
               </ButtonLink>
             </div>
             <div className="metrics">
-              {d.home.metrics.map((metric) => (
-                <Metric key={metric.label} value={metric.value} label={metric.label} note={metric.note} />
-              ))}
+              {d.home.metrics.map((metric) => {
+                const benchmark = BENCHMARKS.find((item) => item.id === metric.benchmarkId);
+                if (!benchmark) return null;
+                return (
+                  <Metric
+                    key={metric.benchmarkId}
+                    value={formatValue(benchmark, locale)}
+                    label={metric.label}
+                    note={`${benchmark.conditions[locale]} · ${benchmark.measuredAt}`}
+                  />
+                );
+              })}
             </div>
           </div>
           <SceneShell variant="wall" locale={locale} />
@@ -120,6 +133,39 @@ export default function Home({ locale }: { locale: Locale }) {
             </tbody>
           </table>
         </TableWrap>
+      </Section>
+
+      <Section title={d.home.dataTitle} lede={d.home.dataLede}>
+        <TableWrap>
+          <table>
+            <caption>
+              {locale === 'zh'
+                ? '四个关键数字；每个都带日期与条件。'
+                : 'Four key numbers, each with its date and conditions.'}
+            </caption>
+            <thead>
+              <tr>
+                <th scope="col">{locale === 'zh' ? '场景' : 'Scenario'}</th>
+                <th scope="col">{locale === 'zh' ? '值' : 'Value'}</th>
+                <th scope="col">{locale === 'zh' ? '条件' : 'Conditions'}</th>
+                <th scope="col">{locale === 'zh' ? '日期' : 'Date'}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {summaryRows.map((row) => (
+                <tr key={row.id}>
+                  <td>{row.label[locale]}</td>
+                  <td className="num">{formatValue(row, locale)}</td>
+                  <td>{row.conditions[locale]}</td>
+                  <td className="num">{row.measuredAt}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </TableWrap>
+        <p style={{ marginTop: 12 }}>
+          <a href={PAGES.benchmarks[locale]}>{d.home.dataCta} →</a>
+        </p>
       </Section>
 
       <Section title={d.home.limitationsTitle}>

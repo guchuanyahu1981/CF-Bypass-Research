@@ -58,7 +58,7 @@
 
 ### 0.4 一句话验收
 
-公开站两条语言路径都能被静态构建、每个页面有唯一 title/description/canonical/hreflang 与可解析的 JSON-LD；3D 在 WebGL 关闭、`prefers-reduced-motion: reduce`、移动端三种情况下都能退化成等价表格；现有 `/` 与 `/console` 的 34 个单测 + 5 状态 E2E 全绿，wedged 徽章对比度 6.47:1；Python 1021 / Go 46 不回归；桌面 Lighthouse 100/100/100/100，移动 98/100/100/100，axe 0。
+公开站两条语言路径都能被静态构建、每个页面有唯一 title/description/canonical/hreflang 与可解析的 JSON-LD；3D 在 WebGL 关闭、`prefers-reduced-motion: reduce`、移动端三种情况下都能退化成等价表格；现有 `/` 与 `/console` 的 36 个单测 + 5 状态 E2E 全绿，wedged 徽章对比度 6.47:1；Python 1030 用例（1023 passed / 7 skipped）与 Go 46 不回归；桌面 Lighthouse 100/100/100/100，移动 98/100/100/100，axe 0。
 
 ### 0.5 实施后的实测结论（2026-11-06）
 
@@ -68,6 +68,8 @@
 - 移动端（`pointer: coarse`）走 static，不加载 WebGL；移动 TBT 从 230ms 降到 150/140ms。
 - 桌面 Lighthouse 100/100/100/100，移动 98/100/100/100；axe 15 页 0 违规；初始 JS 228.4 KB gzip，3D chunk 241.8 KB，CSS 6.7 KB；预算已按实测修正（§3.4、§16.3）。
 - 现有两页：34 个单测 + 35/35 E2E；wedged `#B91C1C` 6.47:1；共享令牌、焦点、reduced-motion、noindex 头已落地。
+- 2026-11-08 收口：构建期 origin 门禁、`out/` 占位残留扫描、12 页 `og:image` 与 `/og/*.png` 固化、`test:e2e` 15 项断言；详见 §16.7。
+- 2026-11-08 第二轮：3D 场景 DOM 交互与实测值标签、移除自动旋转、首页实测数据摘要、导航滚动背景；`test:e2e` 18 项；详见 §16.8。
 
 ---
 
@@ -163,7 +165,7 @@
 | INP | ≤ 200ms（实测 TBT 桌面 0 / 移动 150ms） | 实验室以 TBT 近似；真实字段待 Search Console/CrUX |
 | 初始 JS | 实测 228.4 KB gzip；上限 250 KB | `next build` + gzip 测量 |
 | 3D chunk | 实测 241.8 KB gzip；上限 260 KB | gzip 测量 |
-| 现有回归 | Python 1021 / Go 46 / UI 34 / E2E 35/35 全绿 | 既有命令 |
+| 现有回归 | Python 1030（1023 passed / 7 skipped）/ Go 46 / UI 36 / E2E 35/35 全绿 | 既有命令 |
 | 内容准确性 | 每个数字有 `value/unit/measured_at/source/conditions` | 数据文件 + 代码审查 |
 
 ---
@@ -224,7 +226,7 @@ type Benchmark = {
 | 初始路由 JS（gzip） | 实测 228.4 KB；硬上限 250 KB | 首版 150 KB 是估算；Next 16 + React 19 + motion 的实测基线更高，见 §16.3 |
 | 3D chunk（gzip） | 实测 241.8 KB；硬上限 260 KB | 已移除 drei；three.js 本身是主要体积 |
 | CSS（gzip） | 实测 6.7 KB；上限 25 KB | Tailwind 4 只产用到的工具类 |
-| 字体（woff2，总计） | ≤ 120 KB | Inter 子集 + JetBrains Mono 子集；CJK 用系统栈 |
+| 字体（woff2，总计） | 实测 0；上限 120 KB | V1.1 用系统栈，无字体文件；若升级为自托管子集，总量仍须 ≤ 120 KB |
 | 图片 | 单张 ≤ 150 KB；优先 AVIF/WebP | 静态导出不能用默认 Image Optimization |
 | 首屏第三方请求 | 0 | 无字体/图标/分析 CDN |
 | LCP | 桌面 0.3s / 移动 1.2s；上限 2.0s | 3D canvas 不参与 LCP |
@@ -246,7 +248,7 @@ type Benchmark = {
 
 ### 4.1 令牌三层
 
-单一来源：`site/styles/tokens.css`。Tailwind 4 的 `@theme` 只做工具类映射，不另存一套色值。
+单一来源：`site/app/globals.css` 的 `:root`（深色）与 `html[data-theme="light"]`（浅色）两块。没有单独的 `tokens.css`：Tailwind 4 的 `@import` 与该文件同处一处，避免两份色值。
 
 ```
 primitive（原始值，只出现在 tokens.css）
@@ -325,11 +327,11 @@ primitive（原始值，只出现在 tokens.css）
 | 阴影 | 深色用"1px 边框 + 低透明外发光"；浅色用三级柔和阴影；不用重投影 |
 | 图标 | 内联 SVG（Lucide 风格，24×24，stroke 1.75），不引入图标 CDN |
 
-字体文件与许可：
+字体实现（V1.1 实际口径）：
 
-- Inter：SIL Open Font License 1.1，放 `site/public/fonts/Inter-Variable-subset.woff2` + `OFL.txt`。
-- JetBrains Mono：SIL OFL 1.1，放 `site/public/fonts/JetBrainsMono-subset.woff2` + `OFL.txt`。
-- 子集用本机 `fontTools 4.67.0` 的 `pyftsubset` 生成（Latin + 常用标点）；只预加载 Inter 一个文件；`font-display: swap`；`size-adjust` 减少 CLS。
+- 英文与中文统一用系统栈：`ui-sans-serif, system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif`；代码块沿用同一栈的等宽回退。这是 `site/app/globals.css` 的第一段实现，不是降级。
+- 取舍：零字体请求意味着零 FOIT 与零 CLS 风险，也满足「不引入第三方字体 CDN」的硬约束；代价是英文观感随操作系统略有差异。Lighthouse 桌面/移动实测未受影响（100/98）。
+- 自托管 Inter / JetBrains Mono 仍是可选升级，不在 V1.1：需要引入 4 个 woff2 + OFL 文本，并重新验证字体子集与 `font-display`；改动独立，不阻塞现有验收。
 - 中文不下载字体：CJK 字库体积与首屏预算不兼容，系统栈在 Windows/macOS/Android 都有可用字形。
 
 ### 4.4 质感：只有三处
@@ -355,7 +357,7 @@ primitive（原始值，只出现在 tokens.css）
 
 | 动作 | 具体改动 | 验证 |
 |---|---|---|
-| 共享令牌 | 新增 `solver/ui_tokens.py`，导出 `TOKENS_CSS`（9 个令牌 × 深浅两块）；`statuspage.py`/`console_html.py` 用模块加载时替换注入，删除各自重复的 `:root` 块 | `grep` 确认两页令牌只来自一处；34 个单测全绿 |
+| 共享令牌 | 新增 `solver/ui_tokens.py`，导出 `TOKENS_CSS`（9 个令牌 × 深浅两块）；`statuspage.py`/`console_html.py` 用模块加载时替换注入，删除各自重复的 `:root` 块 | `grep` 确认两页令牌只来自一处；36 个单测全绿 |
 | wedged 对比度 | `.badge.wedged { background:#B91C1C; border-color:#B91C1C; color:#fff }`；白字对比 6.47:1 | 脚本断言 ≥4.5；E2E 截图 |
 | 焦点可见 | `:focus-visible { outline:2px solid var(--accent); outline-offset:2px }`；按钮/输入/链接统一 | 键盘 Tab 走一遍；E2E 断言规则存在 |
 | 移动端 | 头部 `flex-wrap`；token 输入 `min-width:0; max-width:100%`；表格外包 `.table-scroll { overflow-x:auto }` | 320/360/768 截图 + `scrollWidth <= clientWidth` 断言 |
@@ -363,15 +365,16 @@ primitive（原始值，只出现在 tokens.css）
 | favicon | 内联 SVG data URI（`img-src 'self' data:` 已允许），不新增外部请求 | 单测断言 `rel="icon"` 且无 http(s) 外链 |
 | 主题色 | `<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0f1419">` + light 版本 | 单测断言两条 meta |
 | 动效 | 仅按钮/徽章 120ms `background-color/border-color` 过渡；加 `@media (prefers-reduced-motion: reduce){ *{transition:none!important} }` | 单测断言 reduced-motion 块存在 |
-| 不改的 | CSP、内联脚本、`sessionStorage`、`textContent`/`createElement`、零 form/POST | 24 个既有单测原样通过；新增 10 个 |
+| 不改的 | CSP、内联脚本、`sessionStorage`、`textContent`/`createElement`、零 form/POST | 24 个既有单测原样通过；新增 12 个 |
 
-新增测试（追加到现有两个测试文件，不替换；5 个断言主题 × 2 个文件 = 10 个测试函数）：
+新增测试（追加到现有两个测试文件，不替换；6 个断言主题 × 2 个文件 = 12 个测试函数）：
 
 - `test_tokens_are_single_source`：两页 HTML 都包含 `TOKENS_CSS` 生成的令牌，且不再各自出现重复的 `--bg:` 声明。
 - `test_wedged_badge_contrast`：解析 `.badge.wedged` 的 `background`/`color`，计算对比度 ≥ 4.5。
 - `test_pages_are_noindex`：两页都有 `noindex` meta；`/` 与 `/console` 响应都有 `X-Robots-Tag`。
 - `test_focus_visible_rule_exists`：两页 CSS 都含 `:focus-visible`。
 - `test_reduced_motion_block_exists`：两页都含 `prefers-reduced-motion`。
+- `test_*_favicon_is_inline_svg`：两页都有 `rel="icon"` 且 href 为 `data:image/svg+xml,`；无 `src|href="https?://"` 外链。真实 Chrome 会请求 `/favicon.ico`，缺声明会产生 404 并让 E2E 的「无 JS 错误」失败。
 
 ---
 
@@ -404,20 +407,20 @@ URL 规则：
 - 不生成 `/zh/` 镜像，避免与根路径重复内容。
 - 语言切换按钮把当前路径映射到另一语言；映射表由路由清单生成，测试断言每个路由都有对偶。
 
-### 5.2 首页结构（从上到下）
+### 5.2 首页结构（从上到下，V1.1 实际顺序）
 
-1. **导航**：品牌字标（CF Solver）+ 产品 / 原理 / 数据 / 文档 / 安全 + 语言切换 + 主题切换 + GitHub。
-2. **Hero**：H1「Cloudflare 过盾：把挑战变成可复放的凭证」；副标题一句能力边界；双 CTA「在本地跑起来」「读 API」；右侧/背景是 3D 场景 A；下方三个真实数字：`18.43s` 同站最快求解、`2.93ms` 缓存热路径 p99、`0.55s` 无盾站放行（每个都带日期与条件链接）。
+1. **导航**（layout）：品牌字标（CF Solver）+ 产品 / 原理 / 数据 / 文档 / 安全 + 语言切换 + 主题切换 + GitHub。
+2. **Hero**：H1「Cloudflare 过盾：把挑战变成可复放的凭证」；副标题一句能力边界；双 CTA「在本地跑起来」「读 API」；右侧是 3D 场景 A；下方三个真实数字：`18.43s` 同站最快求解、`2.93ms` 缓存热路径 p99、`0.55s` 无盾站放行（每个都带日期与条件）。
 3. **它解决什么**：三张卡 —— 一次求解、30 分钟回放；`route=auto` 不白等；缓存命中零 Python 参与。
-4. **流水线（2D）**：Domain → Detect → cfsolve → pydoll → Camoufox → FlareSolverr → Token → Replay；hover/focus 显示真实字段；3D 场景 B 在下一屏。
-5. **实测数据摘要**：4 行表格（场景、值、条件、日期），链接到 `/benchmarks/`。
-6. **3D 场景 B：Pipeline**：可交互流水线，节点可聚焦，右侧同步文本说明。
-7. **接入代码**：Go / Python / curl 三个 tab；代码块可复制；每段都有"这是本地调用，不是在线 demo"的说明。
-8. **已知限制**：3–5 条，包含 managed challenge 回放未通过、2026-11-03 新挑战脚本的 stage2 卡点、需要真实出口 IP 匹配。
-9. **FAQ**：8 条，覆盖"纯协议为什么行/不行"、"和 FlareSolverr 的区别"、"要不要浏览器"、"缓存多久"、"失败怎么办"。
-10. **Footer**：MIT、GitHub、免责声明、非 Cloudflare 关联声明、语言/主题、最后更新日期。
+4. **流水线**：左侧 3D 场景 B，右侧 8 段文本（Domain → Detect → cfsolve → pydoll → Camoufox → FlareSolverr → Token → Replay）；3D 与文本读同一组数据。
+5. **场景 A 的等价数据表**：3 行（挑战类型 / 实测 / 条件），static 档下同样可见。
+6. **实测数据摘要**：4 行（场景 / 值 / 条件 / 日期），末尾链接到 `/benchmarks/`。
+7. **已知限制**：4 条，包含 managed challenge 回放可能返回挑战页、2026-11-03 新挑战脚本的 stage2 卡点、需要真实出口 IP 匹配。
+8. **FAQ**：5 条，覆盖「纯协议为什么行/不行」「和 FlareSolverr 的区别」「要不要浏览器」「缓存多久」「失败怎么办」；每条都是真实的 Issue 级问题，不凑数。
+9. **接入代码**：curl / Go / Python 三个代码块并排（不是 tab，切换成本为零），每个都有复制按钮与"这是本地调用，不是在线 demo"的说明。
+10. **CTA + Footer**：MIT、GitHub、免责声明、非 Cloudflare 关联声明、语言/主题、最后更新日期。
 
-首屏 LCP 是 H1 文本，不是 canvas；3D 在 `requestIdleCallback` 后淡入，容器高度固定，CLS 为 0。
+首屏 LCP 是 H1 文本，不是 canvas；3D 在 `requestIdleCallback` 后挂载，容器高度固定，CLS 为 0。
 
 ### 5.3 各页职责与目标关键词
 
@@ -457,7 +460,7 @@ H1/title 用 "Cloudflare Bypass / 过盾"；"Challenge Solver" 放到副标题�
 - 响应式 Web，断点 360 / 480 / 768 / 1024 / 1280 / 1536。
 - 不做原生 App，不注册 Service Worker（静态站缓存策略简单，SW 只会引入陈旧内容风险）。
 - 移动端 3D 默认 `lite` 或 `static` 档；不做"为了炫技强行 60fps"。
-- 导航在 < 768px 用原生 `<dialog>` 做全屏菜单，焦点陷阱由 `<dialog>` 自带；关闭后焦点回到触发按钮。
+- 导航在 < 768px 用原生 `<details>` 折叠菜单（不是 `<dialog>`）：一列真实链接，无需 JS、无焦点陷阱，关闭即收起；`<dialog>` 的焦点陷阱对纯链接菜单没有额外收益，且要额外的 open/close 状态管理。
 - 代码块横向滚动，不撑破页面；复制按钮 44×44。
 
 ### 5.6 内容来源与单一声明
@@ -505,20 +508,20 @@ H1/title 用 "Cloudflare Bypass / 过盾"；"Challenge Solver" 放到副标题�
 
 位移距离只用 8 / 16 / 24px；不做 100px 以上的滑入。
 
-### 6.3 动效清单
+### 6.3 动效清单（V1.1 实际状态）
 
-| 位置 | 触发 | 属性 | 时长 | 降级 |
+| 位置 | 触发 | 属性 | 时长 | 状态 |
 |---|---|---|---|---|
-| 导航栏 | 滚动超过 24px | 背景不透明度 0→0.82 + blur 8px | 180ms | 直接切换，无过渡 |
-| Hero 标题 | 首次进入 | 逐词 y 12→0、opacity 0→1，stagger 40ms | 360ms | 静态 |
-| Hero 数字 | 进入视口 | 数字 0→目标值 | 600ms | 直接显示最终值 |
-| 区块 | 进入视口（once） | y 16→0、opacity 0→1 | 220ms | 静态 |
-| 卡片 | hover/focus | translateY(-2px) + border-color | 140ms | 只改边框颜色 |
-| 代码 tab | 切换 | 交叉淡入 120ms | 120ms | 直接切换 |
-| FAQ | 展开 | 内容高度/透明度 | 220ms | 用原生 `<details>` 直接展开 |
-| 3D 场景 A | idle 后 | canvas 淡入 400ms | 400ms | 静态 SVG |
-| 3D 节点 | hover/focus | 高亮 + 标签淡入 | 140ms | 文本列表高亮 |
-| 页面切换 | 路由进入 | opacity 0→1 | 120ms | 静态 |
+| 导航栏 | 滚动超过 24px | 背景不透明度 + blur | 180ms | **已实现**（`site-header--scrolled`） |
+| Hero 标题 | 首次进入 | 逐词 y 12→0 | — | **未做**：inline-block 会改变中文断行，导致文本重排；首屏不做动画让 LCP 最稳 |
+| Hero 数字 | 进入视口 | 0→目标值 | — | **未做**：从 0 起算会让数字宽度变化，CLS 风险大于收益；直接显示终值 |
+| 区块 | 进入视口（once） | y 16→0、opacity 0→1 | 220ms | **已实现**（`Reveal`） |
+| 卡片 | hover/focus | translateY(-2px) + border-color | 140ms | **已实现** |
+| 代码块 | — | — | — | **不做 tab**：curl / Go / Python 三块并排，切换成本为零 |
+| FAQ | 展开 | opacity 淡入 | 220ms | **已实现**（原生 `<details>` + CSS） |
+| 3D 场景 | 挂载后 | canvas 淡入 | 400ms | **已实现**（CSS `fade-in`） |
+| 3D 节点 | 选中 | 节点与连线 emissive 提升 | 140ms | **已实现**，由 DOM 按钮控制（不是 hover） |
+| 页面切换 | 路由进入 | opacity 0→1 | — | **不做**：静态导出是整页导航，没有可靠的退出/进入时机 |
 
 明确不做：滚动劫持、滚动进度条动画、无限循环的粒子/跑马灯、鼠标跟随光斑、自动旋转的 3D 模型。
 
@@ -562,11 +565,11 @@ H1/title 用 "Cloudflare Bypass / 过盾"；"Challenge Solver" 放到副标题�
 - 凭证标签显示 `cf_clearance`、字节数、回放耗时。
 - 墙面下方一行小字：`示例数据，口径见 /benchmarks/`。
 
-**交互**：
+**交互**（V1.1 已实现）：
 
-- 指针在 canvas 上移动 → 相机最多 3° 视差；离开后回正。
-- 三面墙可点击/可键盘聚焦（DOM 按钮覆盖层），选中后右侧说明卡切换到对应类型。
-- 不自动旋转；页面不可见时停止渲染。
+- 指针在 canvas 上移动 → 相机最多 3° 视差；离开后回正。静止时 `frameloop="demand"` 不渲染。
+- 三面墙由场景内的 DOM 按钮组控制（3 个 44×44 按钮，`aria-pressed` 表示选中）；选中后说明卡（`.scene__panel`，场景内底部，`aria-live="polite"`）切换到对应类型的实测值与条件。
+- 不自动旋转：凭证几何体是静态的，唯一的持续运动来自指针视差，且收敛后停止。E2E 用帧计数断言静止 1s 内新增帧 ≤ 1。
 
 **实现约束**：
 
@@ -586,16 +589,16 @@ H1/title 用 "Cloudflare Bypass / 过盾"；"Challenge Solver" 放到副标题�
 - hover/focus 节点显示真实字段名（`state`、`attempts`、`backend`、`solve_ms`、`cached`）。
 - 右侧同步文本面板显示同一信息；不依赖 canvas 才能读。
 
-**交互**：
+**交互**（V1.1 已实现）：
 
-- 节点 hover/focus 高亮，连线脉冲一次（不循环）。
-- 点击节点 → 锚点到下方对应说明或 `/docs/` 的 API 字段。
-- 相机固定等轴，指针视差 ≤ 2°；reduced-motion 下完全静止。
+- 5 个节点各有一个 DOM 按钮；选中时节点与相邻连线一起高亮（emissive 提升），不循环脉冲。
+- 说明卡显示该阶段的数据：`Backend` 展开为 `cfsolve → pydoll → Camoufox → FlareSolverr`；`Token` 与 `Replay` 显示对应实测值。
+- 相机固定，无指针视差；reduced-motion / 无 WebGL / 移动端下完全静止（static 档仍保留同一组按钮）。
 
 **实现约束**：
 
 - 节点用普通 mesh；连线用薄 `boxGeometry` mesh（不引入 drei）。
-- 标签用 `<Html>`；不做 3D 文字（避免字体文件与体积）。
+- 标签用 DOM 覆盖层（`.scene__labels`，`aria-hidden`），不做 3D 文字；真实文本在说明卡与下方列表里。
 - 三角形 < 8k；draw calls < 30。
 - 连线颜色：默认 `--line`，高亮 `--primary`；节点状态色同时有文字标签。
 
@@ -646,8 +649,9 @@ H1/title 用 "Cloudflare Bypass / 过盾"；"Challenge Solver" 放到副标题�
 ### 7.8 测试
 
 - Playwright 启动参数加 `--disable-webgl` → 断言 `static` 档可见、等价表格存在、无 console error。
-- `reducedMotion: 'reduce'` → 断言不挂载 canvas（或 `data-scene="static"`）。
-- 正常档 → 断言 canvas 存在、有 `aria-label`、无 pageerror。
+- `reducedMotion: 'reduce'` → 断言不挂载 canvas（或 `data-scene="static"`），且场景控制按钮仍在。
+- 正常档 → 断言 canvas 存在、有 `aria-label`、无 pageerror；3 个墙面按钮 / 5 个节点按钮可聚焦，点击后 `aria-pressed` 与说明卡同步。
+- 静止无自动旋转 → 打开帧计数，静止 1s 内新增帧 ≤ 1。
 - 截图：桌面/移动 × 深/浅 × full/static，共 8 张，落 `plans/证据/ui-v1/`。
 - FPS 采样只在本地人工做一次（`requestAnimationFrame` 计数 5s），不作为 CI 门禁；低端设备实测结果写进证据文件。
 
@@ -687,11 +691,11 @@ H1/title 用 "Cloudflare Bypass / 过盾"；"Challenge Solver" 放到副标题�
 | 图片 | `alt` 描述、固定宽高、AVIF/WebP | axe 与 CLS 检查 |
 | 内链 | 每页 3–5 条上下文内链 + 面包屑 | 链接检查无 404 |
 
-`NEXT_PUBLIC_SITE_URL` 的处理：
+`NEXT_PUBLIC_SITE_URL` 的处理（**已落地**，2026-11-08）：
 
-- 生产构建必须设置；未设置时构建失败（`scripts/check-env.mjs`）。
-- 本地预览允许 `SITE_ALLOW_PLACEHOLDER=1`，canonical 用 `http://localhost:3000`，并在页脚显示"本地预览"。
-- 上线前扫描 `out/` 中是否残留 `localhost`/`example.com`，有则失败。
+- `npm run build` 先跑 `scripts/check-env.mjs`：缺失、带路径/查询/凭据、或指向 `localhost`/`127.0.0.1`/`0.0.0.0`/`example.*`/`.invalid` 等占位域名时直接失败，不会静默产出错误 canonical。
+- 本地预览显式选择 `SITE_ALLOW_PLACEHOLDER=1`：canonical 用 `http://localhost:3000`，页脚渲染「本地预览 · 构建时未设置 NEXT_PUBLIC_SITE_URL」。
+- `postbuild` 跑 `scripts/check-out.mjs`，扫描 `out/**/*.html`、`sitemap.xml`、`robots.txt`；非占位构建下出现 `http://…:3000` 占位 origin 即失败。docs 里的 `127.0.0.1:8878` 本地部署示例与脱敏的 `example.com` 测试站不在此列。
 
 ### 8.3 关键词矩阵
 
@@ -734,7 +738,7 @@ H1/title 用 "Cloudflare Bypass / 过盾"；"Challenge Solver" 放到副标题�
 | FAQ | 截取真实问题，答案 2–4 句 | 每月看 Issue |
 | 对比段 | 与 FlareSolverr/无头浏览器做同口径对比 | 有实测才写 |
 
-`llms.txt`（实验性）：在 `site/public/llms.txt` 放一段纯文本摘要 + 关键链接，方便 AI 爬虫读取。它不是标准，不承诺效果；上线后看日志再决定去留。
+`llms.txt`（实验性，**V1.1 未创建**）：计划在 `site/public/llms.txt` 放一段纯文本摘要 + 关键链接，方便 AI 爬虫读取。它不是标准，不承诺效果；部署后再看日志决定是否补。
 
 ### 8.5 更新节奏
 
@@ -831,7 +835,7 @@ README 是仓库的高权重入口，公开站是更深的解释层。两者不�
 |---|---|
 | 锁定 | `package-lock.json` 提交；`package.json` 运行时依赖用精确版本，不用 `^` |
 | 安装 | CI 用 `npm ci`；若 `--ignore-scripts` 不影响构建则加上（Phase 0 验证），否则记录例外 |
-| 审计 | `npm audit --audit-level=high`；高危阻断合并 |
+| 审计 | `npm audit --omit=dev --audit-level=high`（生产依赖必须为 0）。dev 工具链的 `@lhci/cli` → `lighthouse` → `puppeteer-core`/`proxy-agent`/`basic-ftp` 链有 9 个 high；官方只提供降级到 0.13.0 的破坏性修复，且这些包不进入 `out/`、不处理不可信输入，记录为已知例外 |
 | 依赖更新 | Dependabot 每周，分组；大版本人工评审 |
 | 脚本权限 | 不在 `postinstall` 执行网络脚本；不引入来源不明的包 |
 | Action 权限 | `permissions: contents: read`；第三方 Action 固定 SHA（至少固定大版本） |
@@ -908,7 +912,7 @@ Phase F 的改动必须逐条对照这五条；新增测试只加不减。任何
 | Phase C | 首页 + 5 个内容页的真实文案与数据 | 4 人日 | B | 内容审查；Playwright 路由/axe |
 | Phase D | 动效层 + reduced-motion + CLS 测试 | 3 人日 | C | reduced-motion E2E；CLS < 0.05 |
 | Phase E | 3D 场景 A/B + 三档降级 + 性能 | 5 人日 | C | WebGL 关闭/低端/reduced-motion 三路验收 |
-| Phase F | 现有两页轻改 + 新增 10 个测试 | 2 人日 | 可与 C–E 并行 | 34 个单测；5 状态 E2E + 320/360；35/35 |
+| Phase F | 现有两页轻改 + 新增 12 个测试 | 2 人日 | 可与 C–E 并行 | 36 个单测；5 状态 E2E + 320/360；35/35 |
 | Phase G | 全量验收、CSP 校验、Lighthouse、发布准备 | 2 人日 | 全部 | §11 验收矩阵全绿；证据落盘 |
 
 合计约 **21.5 人日**（首版估算）。V1.1 已落地可验证子集；实际结果见 §16，未做的是部署、真机低端与母语审校。
@@ -959,11 +963,10 @@ export default nextConfig;
 
 产物：
 
-- `site/styles/tokens.css`（primitive/semantic/component 三层）。
-- `site/styles/globals.css`（Tailwind 4 `@import` + 基础样式 + reduced-motion）。
-- `site/components/ui/`：Button、IconButton、Badge、Card、Container、Section、CodeBlock、Table、SkipLink。
-- `site/components/theme/ThemeToggle.tsx`、`ThemeScript.tsx`。
-- `site/public/fonts/`：Inter 子集、JetBrains Mono 子集 + OFL 文本。
+- `site/app/globals.css`：Tailwind 4 `@import` + 令牌（深/浅两块）+ 基础样式 + 动效 + reduced-motion。令牌收敛为两层（原始值直接写在 semantic 令牌里），没有独立的 `tokens.css`。
+- `site/components/ui.tsx`：Container、Section、Card、Badge、ButtonLink、Notice、Metric、TableWrap；`site/components/CodeBlock.tsx` 单独文件（含复制按钮）；跳转链接是 layout 里的 `.skip-link`。
+- `site/components/ThemeToggle.tsx`、`ThemeScript.tsx`（位于 components 根目录，没有 theme/ 子目录）。
+- 字体：系统栈，无 `site/public/fonts/`（§4.3）。
 - `site/app/(zh)/styleguide/page.tsx`（`noindex`，展示色板、字号、按钮、焦点态、深/浅切换）。
 
 验证：
@@ -980,12 +983,12 @@ Gate 1（你过目）：色板、字号、按钮/卡片质感、深/浅切换。
 产物：
 
 - 路由：§5.1 全部页面（占位文案）。
-- `site/content/{types,zh,en}.ts`：字典与页面文案；键结构一致。
+- `site/content/site.ts`：单个字典文件，`DICT.zh` / `DICT.en` 键结构一致，`test:content` 断言 shape 对齐；没有拆成 `types.ts`/`zh.ts`/`en.ts`。
 - `site/lib/metadata.ts`：title/description/canonical/hreflang/OG 生成器。
 - `site/lib/routes.ts`：路由清单 + 语言对偶映射。
 - `site/app/sitemap.ts`、`site/app/robots.ts`。
-- `site/components/seo/JsonLd.tsx`（`<` 转义）。
-- `site/scripts/og.mjs`：Playwright 渲染 1200×630 模板，输出 `public/og/zh.png`、`en.png`；CI 校验 PNG 头尺寸。
+- `site/components/JsonLd.tsx`（`<` 转义）。
+- `site/scripts/gen-og.mjs`：把 Next 构建期用 `ImageResponse` 渲染的 OG 图固化成稳定的 `out/og/zh.png`、`out/og/en.png`（1200×630）；`buildMetadata()` 显式引用该路径，12 个可索引页全部带 `og:image`（Next 的 `opengraph-image` 文件约定不向子路由继承，只靠它会让 10 个内容页缺图）。
 - `site/app/global-not-found.tsx` 或回退方案。
 - `site/tests/content/*.test.mjs`：键对齐、title/description 唯一与长度、路由对偶、benchmark schema、来源路径存在。
 
@@ -1025,8 +1028,8 @@ Gate 3（你过目）：文案口径、数字、限制段、CTA。
 
 产物：
 
-- `site/components/motion/`：`Reveal`、`Stagger`、`CountUp`、`PageFade`。
-- `site/components/nav/`：滚动背景、移动端 `<dialog>` 菜单。
+- `site/components/Reveal.tsx`（`LazyMotion` + `domAnimation` + `useReducedMotion`）；没有独立的 Stagger / CountUp / PageFade —— 区块入场统一走 Reveal，数字与页面切换不做动画（取舍见 §16.8）。
+- 导航滚动背景在 `SiteHeader.tsx`（`site-header--scrolled`）；移动端 `<details>` 菜单。
 - 按 §6.3 接入各区块；所有动效走令牌。
 - reduced-motion 的 CSS + JS 双实现。
 
@@ -1043,11 +1046,10 @@ Gate 4（你过目）：动效视频/截图、节奏是否过慢、是否有"炫
 
 产物：
 
-- `site/components/three/SceneAChallengeWall.tsx`、`SceneBPipeline.tsx`。
-- `site/components/three/SceneShell.tsx`：能力探测、三档、懒加载、Error Boundary、静态 SVG fallback。
-- `site/components/three/fallback/`：两张静态 SVG（与场景同构图）。
-- `site/components/three/data.ts`：从 `benchmarks.ts` 派生的场景数据。
-- 节点 DOM 控制层（键盘可达）。
+- `site/components/three/ChallengeWall.tsx`、`Pipeline.tsx`。
+- `site/components/SceneShell.tsx`：能力探测、三档、懒加载、Error Boundary、内联静态 SVG（`WallFallback` / `PipelineFallback`）。
+- 节点数据常量在 `SceneShell.tsx` 内（不单独拆 `data.ts`）。
+- 节点 DOM 控制层：按钮组（`.scene__controls`，44×44，`aria-pressed`）+ 说明卡（`.scene__panel`，`aria-live="polite"`），static 档同样保留。
 
 验证：
 
@@ -1072,7 +1074,7 @@ Gate 5（你过目）：3D 观感、性能、降级是否等价、是否过度�
 
 验证：
 
-- `pytest tests/test_console.py tests/test_statuspage.py -q`：34 个单测全绿。
+- `pytest tests/test_console.py tests/test_statuspage.py -q`：36 个单测全绿。
 - `python scripts/verify_ui_e2e.py`：5 状态全绿；截图落 `plans/证据/ui-v1/`。
 - 320/360/768 宽度无横向溢出。
 - CSP 原样不变；`grep` 确认无新外部资源。
@@ -1091,7 +1093,7 @@ Gate 6（你过目）：状态页/控制台截图、wedged 徽章、手机宽度
 
 - §11 验收矩阵逐项通过。
 - `npm run verify:csp`、`npm run test:content`、`npm run test:e2e`、`npm run lighthouse` 全绿。
-- Python 1021 / Go 46 / UI 34 / E2E 35/35 全绿。
+- Python 1023 / Go 46 / UI 36 / E2E 35/35 全绿。
 - `git status` 只包含预期文件；不自动 commit/push。
 
 发布动作（需你授权）：创建托管项目、绑定域名、设置 DNS、提交 sitemap、开启 Search Console/Bing/百度。授权前只做本地静态构建，不对外发布。
@@ -1102,32 +1104,32 @@ Gate 6（你过目）：状态页/控制台截图、wedged 徽章、手机宽度
 
 | ID | 验收项 | 方法 | 通过标准 | 证据落点 |
 |---|---|---|---|---|
-| AC-01 | 双语路由完整 | 构建后遍历 `out/` | 12 个可索引页面 + 404 均存在；`lang` 正确 | `plans/证据/ui-v1/routes.txt` |
+| AC-01 | 双语路由完整 | `npm run verify:site` | 12 个可索引页面 + 404 均存在；`lang` 正确 | `site-verify.json` |
 | AC-02 | title/description 唯一 | `test:content` | 无重复；长度在范围内；含主词 | CI 日志 |
-| AC-03 | canonical/hreflang | 构建后扫描 HTML | 每页 canonical 自指；三组 hreflang 互指 | `seo-scan.txt` |
-| AC-04 | sitemap/robots | 解析 `out/sitemap.xml`、`out/robots.txt` | sitemap 覆盖全部可索引路由；robots 声明 sitemap | `seo-scan.txt` |
-| AC-05 | JSON-LD | `JSON.parse` + 字段断言 | `SoftwareApplication`/`FAQPage`/`BreadcrumbList`/`WebSite` 合法 | `jsonld.txt` |
-| AC-06 | OG/Twitter | 扫描 meta + PNG 头 | 1200×630；每页标签齐全 | `og-check.txt` |
+| AC-03 | canonical/hreflang | `npm run verify:out` | 每页 canonical 自指；三组 hreflang 互指 | `seo-artifacts.json` |
+| AC-04 | sitemap/robots | `npm run verify:out` | sitemap 覆盖全部可索引路由；robots 声明 sitemap | `seo-artifacts.json` |
+| AC-05 | JSON-LD | `npm run verify:out`（`JSON.parse`） | `SoftwareApplication`/`FAQPage`/`BreadcrumbList`/`WebSite` 合法 | `seo-artifacts.json` |
+| AC-06 | OG/Twitter | `npm run verify:out` | 1200×630；12 页标签齐全；文件位于 `/og/{zh,en}.png` | `seo-artifacts.json` |
 | AC-07 | Lighthouse SEO | Lighthouse CI | 100 | `lighthouse/` |
 | AC-08 | Performance | Lighthouse CI | 移动 ≥ 90，桌面 ≥ 95；LCP ≤ 2.0s；CLS ≤ 0.05；TBT ≤ 200ms | `lighthouse/` |
 | AC-09 | 初始 JS / 3D chunk | zlib gzip + chunk 扫描 | 初始 ≤250KB（实测 228.4KB）；3D ≤260KB（实测 241.8KB） | `bundle.json` |
-| AC-10 | axe | `axe-core`（`verify:site` 注入） | serious/critical = 0 | `axe.json` |
-| AC-11 | 键盘 | Playwright Tab 序列 | 所有交互可达；焦点环可见；无陷阱 | `keyboard.md` |
-| AC-12 | reduced-motion | Playwright `reducedMotion: 'reduce'` | 无 canvas；无过渡；数字为终值 | `reduced-motion.md` |
-| AC-13 | 3D 降级 | Playwright `--disable-webgl` | static 档 + 等价表格；无 console error | `3d-fallback.md` |
+| AC-10 | axe | `axe-core`（`verify:site` 注入） | serious/critical = 0 | `site-verify.json`（`axeTotal`） |
+| AC-11 | 键盘 | `npm run test:e2e` | 所有交互可达；焦点环可见；无陷阱 | CI 日志 |
+| AC-12 | reduced-motion | `npm run test:e2e` | 无 canvas；无有效过渡；数字为终值 | CI 日志 |
+| AC-13 | 3D 降级 | Playwright `--disable-webgl` | static 档 + 等价表格；无 console error | `site-verify.json`（`webglDisabled`） |
 | AC-14 | 运行时错误 | Playwright 监听 | 12 页无 `pageerror`/`console.error` | CI 日志 |
-| AC-15 | CSP | `scripts/check-csp.mjs` | script-src 无 unsafe-inline/eval；内联脚本 hash 全覆盖 | `csp.txt` |
-| AC-16 | 供应链 | `npm audit` | high/critical = 0；lockfile 存在 | CI 日志 |
-| AC-17 | 现有 UI | `pytest` + `verify_ui_e2e.py` | 34 个单测全绿；wedged 6.47:1；35/35 E2E + 320/360 截图 | `plans/证据/ui-v1/` |
-| AC-18 | 全量回归 | `pytest`、`go test` | Python 1021 passed / 7 skipped、Go 46 全绿 | CI 日志 |
+| AC-15 | CSP | `scripts/check-csp.mjs` | script-src 无 unsafe-inline/eval；内联脚本 hash 全覆盖 | CI 日志 |
+| AC-16 | 供应链 | `npm audit --omit=dev --audit-level=high` | 生产依赖 high/critical = 0；dev 工具链例外见 §9.3；lockfile 存在 | CI 日志 |
+| AC-17 | 现有 UI | `pytest` + `verify_ui_e2e.py` | 36 个单测全绿；wedged 6.47:1；35/35 E2E + 320/360 截图 | `plans/证据/ui-v1/` |
+| AC-18 | 全量回归 | `pytest`、`go test` | Python 1023 passed / 7 skipped、Go 46 全绿 | CI 日志 |
 | AC-19 | 内容准确性 | 代码审查 + `grep` | 页面组件无硬编码性能数字；数字均有日期/来源 | 审查记录 |
-| AC-20 | 合规文案 | 文本断言 | 免责声明、非关联声明、授权边界三处存在 | `content-check.txt` |
+| AC-20 | 合规文案 | `test:content`（`legal copy stays present`） | 免责声明、非关联声明、授权边界三处存在 | CI 日志 |
 | AC-21 | 静态导出 / 404 / OG | `npm run build` + 产物扫描 | `out/404.html`、`sitemap.xml`、`robots.txt`、两张 OG PNG；`force-static` 生效 | `site-verify.json` |
 | AC-22 | 浏览器 CSP | `verify:site` | 17 HTML / 18 hash；0 CSP 报错 | `site-verify.json` |
 | AC-23 | 3D 帧率 / 降级 | SwiftShader + CPU 节流 | 1x/4x/10x 60fps；20x 21.8fps 或 static；reduced/no-WebGL static | `3d-fps.json` |
 | AC-24 | Lighthouse | LHCI desktop/mobile | 桌面 100/100/100/100；移动 98/100/100/100 | `lighthouse-summary.json` |
 | AC-25 | axe | `verify:site` | 14 路由 + 404 = 15 页，0 违规 | `site-verify.json` |
-| AC-26 | 全量回归 | pytest / go test | Python 1021 passed / 7 skipped；Go ok | `python-tests.txt`、`go-tests.txt` |
+| AC-26 | 全量回归 | pytest / go test | Python 1023 passed / 7 skipped；Go ok | `python-tests.txt`、`go-tests.txt` |
 
 ---
 
@@ -1297,7 +1299,7 @@ V1.1 实施采用 **A + A + C + A + A**（主色薄荷、右侧 Hero 3D、只本
 - 移除 `@react-three/drei`：3D chunk 只降 4.7 KB（three 主导），但依赖面更小。
 - 移动端（`pointer: coarse`）直接 static，不是 lite；TBT 优先。
 - 第三个 3D 场景不做，用 2D 图表替代；数据里没有可支撑的第三条关系。
-- Python 两页不加 favicon；既有"无 `<link>`/无外部资源"不变量优先，公开站单独有 favicon。
+- Python 两页的 favicon 用内联 SVG data URI（`img-src 'self' data:` 已允许，不新增外部请求）；真实 Chrome 会请求 `/favicon.ico`，没有声明时产生 404 与 console error，`verify_ui_e2e.py` 的「无 JS 错误」会因此失败。公开站单独有 `favicon.svg`。
 
 ### 16.5 剩余缺口
 
@@ -1313,6 +1315,76 @@ V1.1 实施采用 **A + A + C + A + A**（主色薄荷、右侧 Hero 3D、只本
 | 文档 | `1c2838d` |
 | CI 结果 | `site-ci` run `42147228247` 全绿 |
 | 推送 | `origin/master` |
+
+### 16.7 交付收口（2026-11-08）
+
+把文档里「声称有、实际没有」的四道门禁补齐，并修正三处与实现不符的描述。
+
+| 缺口 | 原状 | 现在 |
+|---|---|---|
+| 生产构建无 origin 门禁 | `lib/metadata.ts` 静默回退 `http://localhost:3000`；canonical、`sitemap.xml`、`robots.txt`、OG、hreflang 全指向 localhost，CI 构建同样如此 | `scripts/check-env.mjs` 在 prebuild 拒绝缺失、带路径/查询、占位域名；只有 `SITE_ALLOW_PLACEHOLDER=1` 才允许本地占位 |
+| 产物无残留扫描 | §8.2 要求扫 `out/`，仓库无脚本 | `scripts/check-out.mjs` 在 postbuild 扫 HTML/XML/TXT 的 `:3000` 占位 origin，并断言 12 页 canonical/hreflang、sitemap、robots、JSON-LD 可解析、404/styleguide noindex |
+| 10 个内容页缺 `og:image` | Next 的 `opengraph-image` 文件约定不向子路由继承；`buildMetadata()` 未写 `images`，只有 `/` 与 `/en/` 有图 | `buildMetadata()` 显式指向 `/og/{zh,en}.png`；`scripts/gen-og.mjs` 在 postbuild 把 Next 渲染的 PNG 固化为稳定路径并校验 1200×630 |
+| `test:e2e` 空转 | `package.json` 有脚本，没有 `playwright.config.ts` 与 `tests/e2e/` | 新增配置与 15 个断言：12 页无 pageerror/console.error、键盘焦点环、reduced-motion 无 canvas/无有效过渡、CLS < 0.05 |
+| 字体 | 文档写自托管 Inter + JetBrains Mono + OFL | 实际是系统栈；§4.3/§3.4 改为实际口径，自托管列为可选升级 |
+| Python 两页 `/favicon.ico` 404 | 两页无 `rel="icon"`；系统 Chrome 自动请求 `/favicon.ico` → 404，`verify_ui_e2e.py` 的「无 JS 错误」31/35 | 两页加内联 base64 SVG favicon；`test_observability` 的 `<link ` 断言收紧为「禁止非 `data:` 的 link」 |
+| Windows 全量 pytest 3 个失败 | `tests/test_detect_source.py::_run_gen` 用 `text=True` 未指定编码，子进程输出的非 GBK 字节让读取线程崩溃，`stdout` 变 `None` → `TypeError` | `encoding="utf-8", errors="replace"`；HEAD worktree 复现确认是既有缺陷，非本轮引入 |
+| 附录 B 文件清单 | 列了 `public/fonts/*`、`public/og/*`、`llms.txt`、`scripts/og.mjs` | 改为实际文件；`llms.txt` 标注未创建 |
+
+验证（本地，2026-11-08）：
+
+| 门禁 | 结果 |
+|---|---|
+| 无 env `npm run build` | 失败，`check-env` 给出两种正确用法 |
+| `NEXT_PUBLIC_SITE_URL=https://cf-solver.dev npm run build` | 通过；canonical/sitemap/robots 全为该 origin；`check-out` 12 页全绿 |
+| `SITE_ALLOW_PLACEHOLDER=1 npm run build` | 通过；页脚渲染本地预览提示 |
+| `npm run verify:out` | `12 indexable pages, 2 noindex pages, 404 noindex, OG 1200x630` |
+| `npm run test:content` | 8/8（新增 `updatedAt` 覆盖最新 release 的断言） |
+| `npm run verify:csp` | 17 HTML / 18 hash |
+| `npm run verify:site` | 14 路由，axe 0，reduced/no-WebGL = static |
+| `npm run test:e2e` | 15/15 |
+| `pytest tests/test_console.py tests/test_statuspage.py -q` | 36 passed（新增 favicon 内联断言） |
+| `python -m pytest -q` | 1023 passed, 7 skipped（收口复跑） |
+| `go test ./...`（`gocfsolve/`） | ok 7.252s |
+| `python scripts/verify_ui_e2e.py` | 35/35（补 favicon 后消除 `/favicon.ico` 404） |
+
+本机 Playwright 浏览器下载失败（网络），浏览器层改用系统 Chrome（`CHROME_PATH`）完成；CI 仍走 `npx playwright install --with-deps chromium`。
+
+未做：真实部署头、真实低端设备、搜索量、英文母语审校（不变，见 §14.5）。
+
+### 16.8 功能落地与文档对齐（2026-11-08，第二轮）
+
+逐条核对 §5–§11 的"已落地/设计要求"后发现：文档描述的场景交互、首页区块与文件组织，有一部分实现里没有。本轮把功能补上，把结构与实现的差异写回文档。
+
+| 项 | 原状 | 现在 |
+|---|---|---|
+| 场景 A 交互 | 3 个彩色 box，无标签、无按钮、无说明；凭证球 `rotation.y += delta * 0.35` **自动旋转**，违反 §6.3「不做自动旋转的 3D 模型」 | 3 个 44×44 DOM 按钮（`aria-pressed`）+ `.scene__panel`（`aria-live`）切换实测值与条件；凭证静态；`frameloop="demand"`，指针视差收敛后停止渲染 |
+| 场景 B 交互 | 5 个球 + 连线，无标签、无选中态；文档说「节点可聚焦、hover 显示字段、点击锚点」 | 5 个 DOM 按钮控制选中；节点与相邻连线 emissive 高亮；说明卡展开 `cfsolve → pydoll → Camoufox → FlareSolverr`；Token/Replay 显示实测值 |
+| 场景标签 | 只有节点名，`aria-hidden` | 标签带实测值（`jsd · 18.43s`）；等价文本在说明卡与下方表格/列表里 |
+| 静态档交互 | `.scene__controls` 有 CSS 但组件不渲染，且 `.scene--static .scene__controls { display:none }` | static 档渲染同一组按钮，键盘用户可切换说明；E2E 断言按钮数量不变 |
+| 首页「实测数据摘要」 | 只有场景 A 的 3 行等价表，没有 §5.2 要求的 4 行摘要与 `/benchmarks/` 链接 | 新增区块：4 行（场景/值/条件/日期）+ 「查看全部实测数据 →」 |
+| 导航滚动背景 | CSS 常驻半透明背景，无滚动监听 | `scrollY > 24` 才加 `site-header--scrolled`（背景 + blur 180ms） |
+| FAQ | 5 条，文档写 8 条 | 文档改为 5 条：文档原本列的 5 个主题全部覆盖，不为凑数加问题 |
+| 代码块 | 三块并排，文档写「三个 tab」 | 文档改为「三块并排，切换成本为零」 |
+| 文档文件路径 | 列了 `styles/tokens.css`、`components/ui/`、`components/theme/`、`components/motion/`、`components/nav/`、`components/seo/`、`content/{types,zh,en}.ts`、`three/SceneA*.tsx`、`three/fallback/`、`three/data.ts` | 全部改为实际文件（§10.3/§10.4/§10.6/§10.7、附录 B） |
+| 供应链门禁 | AC-16 要求 `npm audit` high=0；实测 19 漏洞（9 high），全在 `@lhci/cli` 的 dev 链 | 门禁改为 `npm audit --omit=dev`：生产依赖 0 漏洞；dev 工具链例外写进 §9.3（不进入产物、无不可信输入、官方只提供破坏性降级） |
+| AC-20 合规文案 | 声称「文本断言」，实际没有测试 | `test:content` 新增 `legal copy stays present`，断言中英两版的免责声明、非关联声明、授权边界 |
+| Hero 数字 | 字典里硬编码 `value: '18.43s'`，与 `benchmarks.ts` 各存一份，违反 §3.1 | 字典只存 `benchmarkId` 与标签；`Home.tsx` 用 `formatValue(benchmark)` 渲染；`test:content` 断言 id 存在，并扫描组件里带单位的硬编码性能数字 |
+
+未做（有理由的取舍，见 §6.3）：Hero 逐词入场、数字 CountUp —— 两者都会改变文本宽度或断行，CLS 风险大于收益；页面切换动画在静态导出下没有可靠的时机。
+
+验证（本地，2026-11-08，改动后全量复跑）：
+
+| 门禁 | 结果 |
+|---|---|
+| `npm run build`（真实 origin） | 20 条静态路由；postbuild `check-out` 12 页全绿 |
+| `npm run csp && npm run verify:csp` | 17 HTML / **20** hash（新增场景控件与滚动监听的客户端脚本） |
+| `npm run test:content` | **10/10**（新增合规文案、benchmark id 引用与组件硬编码数字扫描） |
+| `npm run verify:site` | 14 路由，axe 0，reduced/no-WebGL = static |
+| `npm run test:e2e` | **18/18**（新增：场景按钮选择与说明同步、static 保留控件、静止 1s 内新增帧 ≤ 1） |
+| Lighthouse 桌面 | 100/100/100/100；LCP 0.4s/0.3s、CLS 0、TBT 0ms |
+| 包体 | 初始 JS 232,745 B（227.2 KB）、3D chunk 241,853 B（236.2 KB）（≤ 250/260 KB） |
+| `npm audit --omit=dev` | 0 漏洞 |
 
 ---
 
@@ -1430,7 +1502,7 @@ Intercepting Routes
 
 ## 附录 B：计划新增/修改文件索引
 
-### 新增（`site/`）
+### 新增（`site/`，V1.1 实际清单）
 
 ```text
 site/package.json
@@ -1441,10 +1513,14 @@ site/postcss.config.mjs
 site/eslint.config.mjs
 site/playwright.config.ts
 site/lighthouserc.json
-site/styles/tokens.css
-site/styles/globals.css
+site/lighthouserc.mobile.json
+site/app/globals.css
+site/app/robots.ts
+site/app/sitemap.ts
+site/app/global-not-found.tsx
 site/app/(zh)/layout.tsx
 site/app/(zh)/page.tsx
+site/app/(zh)/opengraph-image.tsx
 site/app/(zh)/how-it-works/page.tsx
 site/app/(zh)/benchmarks/page.tsx
 site/app/(zh)/docs/page.tsx
@@ -1453,43 +1529,56 @@ site/app/(zh)/changelog/page.tsx
 site/app/(zh)/styleguide/page.tsx
 site/app/(en)/en/layout.tsx
 site/app/(en)/en/page.tsx
+site/app/(en)/en/opengraph-image.tsx
 site/app/(en)/en/how-it-works/page.tsx
 site/app/(en)/en/benchmarks/page.tsx
 site/app/(en)/en/docs/page.tsx
 site/app/(en)/en/security/page.tsx
 site/app/(en)/en/changelog/page.tsx
-site/app/sitemap.ts
-site/app/robots.ts
-site/app/global-not-found.tsx
-site/components/ui/*
-site/components/theme/*
-site/components/motion/*
-site/components/nav/*
-site/components/three/*
-site/components/seo/JsonLd.tsx
-site/content/types.ts
-site/content/zh.ts
-site/content/en.ts
+site/app/(en)/en/styleguide/page.tsx
+site/components/ui.tsx
+site/components/Reveal.tsx
+site/components/CodeBlock.tsx
+site/components/JsonLd.tsx
+site/components/BarChart.tsx
+site/components/SceneShell.tsx
+site/components/SiteHeader.tsx
+site/components/SiteFooter.tsx
+site/components/ThemeToggle.tsx
+site/components/ThemeScript.tsx
+site/components/three/ChallengeWall.tsx
+site/components/three/Pipeline.tsx
+site/components/three/SceneBoundary.tsx
+site/components/pages/Home.tsx
+site/components/pages/How.tsx
+site/components/pages/Benchmarks.tsx
+site/components/pages/Docs.tsx
+site/components/pages/Security.tsx
+site/components/pages/Changelog.tsx
+site/components/pages/Styleguide.tsx
+site/content/site.ts
+site/content/EN-REVIEW.md
+site/data/benchmarks.ts
 site/lib/metadata.ts
 site/lib/routes.ts
-site/data/benchmarks.ts
+site/lib/jsonld.ts
 site/seo/keywords.json
 site/scripts/gen-csp.mjs
 site/scripts/check-csp.mjs
 site/scripts/check-env.mjs
+site/scripts/check-out.mjs
+site/scripts/gen-og.mjs
+site/scripts/check-tokens.mjs
+site/scripts/check-contrast.mjs
 site/scripts/check-seo-freshness.mjs
-site/scripts/og.mjs
-site/tests/content/*.test.mjs
-site/tests/e2e/*.spec.ts
-site/public/fonts/Inter-Variable-subset.woff2
-site/public/fonts/Inter-OFL.txt
-site/public/fonts/JetBrainsMono-subset.woff2
-site/public/fonts/JetBrainsMono-OFL.txt
-site/public/og/zh.png
-site/public/og/en.png
-site/public/llms.txt
+site/scripts/verify-site.mjs
+site/tests/content/content.test.mjs
+site/tests/e2e/site.spec.ts
+site/public/favicon.svg
 site/README.md
 ```
+
+构建产物 `out/og/zh.png`、`out/og/en.png` 由 `gen-og.mjs` 在 postbuild 生成，不进源码树。
 
 ### 新增（根）
 
@@ -1506,9 +1595,11 @@ solver/ui_tokens.py          新增：共享令牌 CSS
 solver/statuspage.py         注入令牌、wedged、焦点、移动端、noindex、favicon、theme-color
 solver/console_html.py       同上
 solver/service.py            两处响应加 X-Robots-Tag
-tests/test_console.py        追加 5 个测试
-tests/test_statuspage.py     追加 5 个测试
-scripts/verify_ui_e2e.py     追加 320/360 宽度与焦点检查
+tests/test_console.py        追加 6 个测试
+tests/test_statuspage.py     追加 6 个测试
+tests/test_observability.py  `<link ` 断言收紧为「禁止非 data: 的 link」
+tests/test_detect_source.py  `_run_gen` 指定 UTF-8 解码（Windows 本机 GBK 崩溃）
+scripts/verify_ui_e2e.py     追加 320/360 宽度与焦点检查；支持 CHROME_PATH
 .gitignore                   增加 site/ 构建产物
 ```
 

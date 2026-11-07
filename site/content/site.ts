@@ -25,7 +25,7 @@ export type Dict = {
     ctaPrimary: string;
     ctaSecondary: string;
     metricsTitle: string;
-    metrics: { value: string; label: string; note: string }[];
+    metrics: { benchmarkId: string; label: string }[];
     capabilitiesTitle: string;
     capabilities: { title: string; body: string }[];
     pipelineTitle: string;
@@ -33,6 +33,9 @@ export type Dict = {
     stages: { name: string; body: string }[];
     sceneTitle: string;
     sceneLede: string;
+    dataTitle: string;
+    dataLede: string;
+    dataCta: string;
     limitationsTitle: string;
     limitations: string[];
     faqTitle: string;
@@ -98,6 +101,7 @@ export const SITE = {
   repo: 'https://github.com/lza6/CF-Bypass-Research',
   license: 'MIT',
   owner: 'lza6',
+  updatedAt: '2026-11-08',
 } as const;
 
 export const PAGES: Record<PageKey, { zh: string; en: string; index: boolean; nav: boolean }> = {
@@ -166,9 +170,9 @@ const zh: Dict = {
     ctaSecondary: '读 API',
     metricsTitle: '三个能复核的数字',
     metrics: [
-      { value: '18.43s', label: '同站 A/B 最快', note: 'cfsolve 纯协议 · 2026-11-01' },
-      { value: '2.93ms', label: '缓存热路径 p99', note: '5589 QPS · 2026-11-03' },
-      { value: '0.55s', label: '无盾站放行', note: 'route=auto · 0 次求解' },
+      { benchmarkId: 'solve.cfsolve.same-site', label: '同站 A/B 最快' },
+      { benchmarkId: 'replay.cached.p99', label: '缓存热路径 p99' },
+      { benchmarkId: 'route.auto.no-shield', label: '无盾站放行' },
     ],
     capabilitiesTitle: '它解决什么',
     capabilities: [
@@ -199,6 +203,9 @@ const zh: Dict = {
     ],
     sceneTitle: '把流水线放进空间里',
     sceneLede: '这是装饰性 3D 场景，真实信息在旁边的文本列表里；WebGL 不可用、低端设备或 reduced-motion 时自动退化为静态图。',
+    dataTitle: '实测数据摘要',
+    dataLede: '四个关键数字，每个都带日期、条件与来源；完整方法与已知限制见实测数据页。',
+    dataCta: '查看全部实测数据',
     limitationsTitle: '已知限制（必须读）',
     limitations: [
       'managed challenge 的回放仍可能是挑战页：2026-11-04 udemy 实测求解成功 18.32s / 462B，但 Python 与 Go 回放都返回挑战页；本版不声称所有 managed challenge 都能回放。',
@@ -423,9 +430,9 @@ const en: Dict = {
     ctaSecondary: 'Read the API',
     metricsTitle: 'Three numbers you can check',
     metrics: [
-      { value: '18.43s', label: 'Fastest same-site A/B', note: 'cfsolve pure protocol · 2026-11-01' },
-      { value: '2.93ms', label: 'Cached hot-path p99', note: '5589 QPS · 2026-11-03' },
-      { value: '0.55s', label: 'No-shield pass', note: 'route=auto · 0 solves' },
+      { benchmarkId: 'solve.cfsolve.same-site', label: 'Fastest same-site A/B' },
+      { benchmarkId: 'replay.cached.p99', label: 'Cached hot-path p99' },
+      { benchmarkId: 'route.auto.no-shield', label: 'No-shield pass' },
     ],
     capabilitiesTitle: 'What it solves',
     capabilities: [
@@ -456,6 +463,9 @@ const en: Dict = {
     ],
     sceneTitle: 'Put the pipeline in space',
     sceneLede: 'This is a decorative 3D scene; the real information is in the text list beside it. Without WebGL, on low-end devices, or under reduced-motion, it falls back to a static image.',
+    dataTitle: 'Measured data at a glance',
+    dataLede: 'Four key numbers, each with its date, conditions, and source; the full method and known limits live on the benchmarks page.',
+    dataCta: 'See all benchmarks',
     limitationsTitle: 'Known limits (must read)',
     limitations: [
       'Managed challenge replay can still return the challenge page: on 2026-11-04, udemy solved in 18.32s / 462B, but both Python and Go replay returned the challenge page. This release does not claim all managed challenges replay.',

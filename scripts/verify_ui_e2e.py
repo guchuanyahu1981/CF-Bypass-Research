@@ -27,6 +27,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 import threading
 from pathlib import Path
@@ -338,7 +339,8 @@ def main() -> int:
         print(f"未知状态：{unknown}\n可选：{', '.join(CASES)}", file=sys.stderr)
         return 2
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
+        # Playwright 自带的 Chromium 没装时，允许用系统 Chrome（与 site/verify-site.mjs 同一约定）。
+        browser = p.chromium.launch(headless=True, executable_path=os.environ.get("CHROME_PATH") or None)
         try:
             for name in names:
                 print(f"\n[{name}]")

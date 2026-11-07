@@ -1,2 +1,4 @@
 command: python scripts/verify_ui_e2e.py
 result: 35/35 PASS (ready, wedged, degraded, no-token, audit, unreachable + 320/360 width overflow checks)
+note: The two pages now carry an inline SVG favicon; without it Chrome requests /favicon.ico, returns 404 and the "no JS errors" assertions fail (31/35 before the fix).
+rerun: 2026-11-08 with CHROME_PATH pointing at the system Chrome

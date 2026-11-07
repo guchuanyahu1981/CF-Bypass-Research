@@ -7,7 +7,10 @@
   },
   "scripts": {
     "dev": "next dev",
+    "prebuild": "node scripts/check-env.mjs",
     "build": "next build",
+    "postbuild": "node scripts/gen-og.mjs && node scripts/check-out.mjs",
+    "verify:out": "node scripts/check-out.mjs",
     "preview": "python -m http.server 3000 --directory out",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",

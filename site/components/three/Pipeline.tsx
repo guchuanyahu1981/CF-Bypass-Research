@@ -10,7 +10,23 @@ const NODES = [
   { label: 'Replay', x: 2.4, color: '#4ADE80' },
 ];
 
-export default function Pipeline({ tier = 'full' }: { tier?: 'full' | 'lite' }) {
+function Node({ x, color, active }: { x: number; color: string; active: boolean }) {
+  return (
+    <group position={[x, 0, 0]}>
+      <mesh>
+        <sphereGeometry args={[0.22, 24, 24]} />
+        <meshStandardMaterial
+          color={color}
+          emissive={color}
+          emissiveIntensity={active ? 0.8 : 0.35}
+          roughness={0.35}
+        />
+      </mesh>
+    </group>
+  );
+}
+
+export default function Pipeline({ tier = 'full', selected = null }: { tier?: 'full' | 'lite'; selected?: string | null }) {
   return (
     <Canvas
       dpr={tier === 'lite' ? 1 : [1, 1.5]}
@@ -23,20 +39,20 @@ export default function Pipeline({ tier = 'full' }: { tier?: 'full' | 'lite' }) 
       <directionalLight position={[2, 4, 5]} intensity={1.0} />
       {NODES.slice(0, -1).map((node, index) => {
         const next = NODES[index + 1];
+        const active = selected === node.label.toLowerCase() || selected === next.label.toLowerCase();
         return (
           <mesh key={`${node.label}-line`} position={[(node.x + next.x) / 2, 0, 0]}>
             <boxGeometry args={[next.x - node.x - 0.48, 0.025, 0.025]} />
-            <meshStandardMaterial color="#223041" emissive="#223041" emissiveIntensity={0.2} />
+            <meshStandardMaterial
+              color={active ? '#4DE3C1' : '#223041'}
+              emissive={active ? '#4DE3C1' : '#223041'}
+              emissiveIntensity={active ? 0.5 : 0.2}
+            />
           </mesh>
         );
       })}
       {NODES.map((node) => (
-        <group key={node.label} position={[node.x, 0, 0]}>
-          <mesh>
-            <sphereGeometry args={[0.22, 24, 24]} />
-            <meshStandardMaterial color={node.color} emissive={node.color} emissiveIntensity={0.35} roughness={0.35} />
-          </mesh>
-        </group>
+        <Node key={node.label} x={node.x} color={node.color} active={selected === node.label.toLowerCase()} />
       ))}
     </Canvas>
   );
