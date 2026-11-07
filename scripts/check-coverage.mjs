@@ -161,7 +161,10 @@ function main() {
     const acc = scopeTotals[scope];
     const rule = scopes[scope];
     if (!acc) {
+      const keys = Object.keys(files);
+      const sample = keys.slice(0, 8).map(norm).join(", ") || "(空)";
       problems.push(`${scope}: 覆盖率报告里没有任何该范围的模块（范围写错或 --cov 没带上？）`);
+      console.error(`  [diag] ${scope} 报告共 ${keys.length} 个键；样例：${sample}`);
       continue;
     }
     if (!rule) {
