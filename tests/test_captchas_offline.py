@@ -73,6 +73,23 @@ def fake_cloakbrowser(monkeypatch):
 # ── 包结构 ──────────────────────────────────────────────
 
 
+VENDOR_OPTIONAL_DEPS = {
+    "aliyun": ("cv2",),
+    "arkose": ("onnxruntime",),
+    "recaptcha": ("PIL",),
+}
+
+
+def _require(*modules: str) -> None:
+    """可选依赖缺失时 skip，而不是把 CI 拖红。
+
+    cv2 / PIL / onnxruntime 是研究环境才装的重量级依赖；CI 只装运行必需项。
+    本地装了就跑真的，CI 没装就明确 skip —— 不伪装成通过。
+    """
+    for name in modules:
+        pytest.importorskip(name)
+
+
 @pytest.mark.parametrize(("vendor", "entry"), sorted(VENDOR_SOLVERS.items()))
 def test_vendor_solver_imports_as_package(fake_cloakbrowser, vendor, entry):
     """每个求解器都必须能以 `captchas.<vendor>.solve` 导入。
@@ -81,6 +98,7 @@ def test_vendor_solver_imports_as_package(fake_cloakbrowser, vendor, entry):
     `from turnstile.solve`）—— 只有把 `captchas/` 自己塞进 sys.path 才能工作，
     等于同一个模块有两套名字。模块级状态（`_solve_lock`、KeyPool）会因此各有一份。
     """
+    _require(*VENDOR_OPTIONAL_DEPS.get(vendor, ()))
     module = __import__(f"captchas.{vendor}.solve", fromlist=["*"])
     assert callable(getattr(module, entry))
 
@@ -269,6 +287,7 @@ def test_browser_kwargs_proxy_and_geoip(monkeypatch):
 
 
 def test_aliyun_signature_is_order_insensitive_and_secret_dependent(fake_cloakbrowser, monkeypatch):
+    _require("cv2")
     aliyun = __import__("captchas.aliyun.solve", fromlist=["*"])
     a = aliyun._sign({"b": "2", "a": "1"})
     assert a == aliyun._sign({"a": "1", "b": "2"})
@@ -280,6 +299,7 @@ def test_aliyun_signature_is_order_insensitive_and_secret_dependent(fake_cloakbr
 
 
 def test_aliyun_invert_nails_the_quadratic(fake_cloakbrowser):
+    _require("cv2")
     aliyun = __import__("captchas.aliyun.solve", fromlist=["*"])
     a, b, c = aliyun._COEF
     for x in (0.0, 50.0, 250.0, 310.0):
@@ -287,6 +307,7 @@ def test_aliyun_invert_nails_the_quadratic(fake_cloakbrowser):
 
 
 def test_recaptcha_normalize_target_strips_articles_and_aliases(fake_cloakbrowser):
+    _require("onnxruntime")
     onnx = __import__("captchas.recaptcha.onnx_classifier", fromlist=["*"])
     alias_key, alias_cls = next(iter(onnx._TARGET_ALIASES.items()))
     assert onnx._normalize_target(alias_key.upper()) == alias_cls
@@ -343,6 +364,7 @@ def test_aliyun_runner_emits_single_result_line(fake_cloakbrowser, monkeypatch, 
 
     主服务靠这行前缀从 stdout 里捞结果；换前缀/换模块路径都会让 aliyun 静默超时。
     """
+    _require("cv2")
     runner = __import__("captchas.aliyun._run", fromlist=["*"])
 
     async def ok(**kwargs):
@@ -358,6 +380,7 @@ def test_aliyun_runner_emits_single_result_line(fake_cloakbrowser, monkeypatch, 
 
 def test_aliyun_runner_turns_exceptions_into_result(fake_cloakbrowser, monkeypatch, capsys):
     """求解器抛异常也必须回一行结果（否则父进程只能等超时）。"""
+    _require("cv2")
     runner = __import__("captchas.aliyun._run", fromlist=["*"])
 
     async def boom(**kwargs):
@@ -422,6 +445,7 @@ def test_renderer_next_returns_true_on_first_working_button(fake_cloakbrowser):
 
 
 def test_cell_center_maps_index_to_canvas_pixel(fake_cloakbrowser):
+    _require("PIL", "numpy")
     img = __import__("captchas.hcaptcha.image_solve", fromlist=["*"])
     cbox = {"x": 10.0, "y": 20.0, "width": 300.0, "height": 300.0}
     # grid=3：每格 100px；idx=0 是第一格中心，idx=4 是正中，idx=8 是右下
@@ -431,6 +455,7 @@ def test_cell_center_maps_index_to_canvas_pixel(fake_cloakbrowser):
 
 
 def test_grid_overlay_preserves_size_and_returns_png(fake_cloakbrowser):
+    _require("PIL", "numpy")
     import base64
     import io
 
@@ -450,6 +475,7 @@ def test_grid_overlay_preserves_size_and_returns_png(fake_cloakbrowser):
 
 
 def test_pick_cells_dedupes_and_drops_out_of_range(fake_cloakbrowser):
+    _require("PIL")
     import asyncio
     import base64
     import io

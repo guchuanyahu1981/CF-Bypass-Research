@@ -26,6 +26,12 @@
 
 -r requirements.txt
 
-pytest-cov==7.1.0
-hypothesis==6.170.14
-ruff==0.14.9
+# captchas/离线测试的可选依赖（tests/test_captchas_offline.py）。
+# 为什么进 dev 而不是 requirements.txt：CF 主链路不需要它们，生产镜像不该多装；
+# 但 CI 必须装 —— 逐模块覆盖率门禁的阈值是按“依赖齐全”测出来的，
+# 缺依赖时测试会 importorskip，相关模块覆盖率归零，门禁会把环境缺失误报成代码没测。
+# 版本与 requirements.txt 里注释掉的研究环境版本保持一致。
+opencv-python-headless==4.10.0.84
+numpy==1.26.4
+pillow==10.4.0
+onnxruntime==1.20.1
