@@ -1,0 +1,51 @@
+{
+  "task_id": "RELEASE-6.3.2",
+  "status": "done",
+  "timestamp": "2026-11-08T06:20:00+08:00",
+  "baseline_commit": "928ab6a",
+  "goal": "独立只读审查发现的问题全部修复并复验，发布 v6.3.2。",
+  "review_findings": {
+    "critical": [
+      "idle 3D E2E was tautological: __sceneFrames instrumentation removed while the test still read it",
+      "320/360px pipeline controls covered by the scene panel after the footer refactor",
+      "pointer parallax never ran under frameloop=demand because R3F does not invalidate on pointermove"
+    ],
+    "should_fix": [
+      "scene labels dropped valueMax and printed the raw unit enum (463bytes, 72mb)",
+      "site changelog still 6.3.0 and benchmarks still 971 while the repo was at 6.3.1 / 1030",
+      "gates.selftest.mjs claimed to run in CI but no workflow invoked it",
+      "importorskip list missed Pillow for arkose/recaptcha; bare-import check only scanned tree.body",
+      "coverage command in docs stayed in module form --cov=captchas"
+    ],
+    "notes": [
+      "placeholder host edge cases (localhost., 127.0.0.2, [::1])",
+      "design guide claimed a canvas aria-label that the implementation does not use",
+      "SITE_BASE_PATH advertised but canonical assumes an origin-root deployment"
+    ]
+  },
+  "commands_executed": [
+    { "cmd": "npm run build (NEXT_PUBLIC_SITE_URL=https://cf-solver.dev)", "exit_code": 0, "note": "postbuild check-out green" },
+    { "cmd": "npm run verify:csp", "exit_code": 0, "note": "17 HTML / 20 hashes" },
+    { "cmd": "npm run test:content", "exit_code": 0, "note": "11/11" },
+    { "cmd": "npx playwright test", "exit_code": 0, "note": "19/19 incl. 360px controls and pointer-triggered idle" },
+    { "cmd": "npm run verify:site", "exit_code": 0, "note": "14 routes, axe 0, static fallbacks" },
+    { "cmd": "npx lhci autorun", "exit_code": 0, "note": "100/100/100/100 desktop" },
+    { "cmd": "python -m pytest -q", "exit_code": 0, "note": "1023 passed, 7 skipped" },
+    { "cmd": "node scripts/gates.selftest.mjs", "exit_code": 0, "note": "18/18" },
+    { "cmd": "gh run view (site-ci 42419400524)", "exit_code": 0, "note": "success" },
+    { "cmd": "gh run view (ci 42419400529)", "exit_code": 0, "note": "success" }
+  ],
+  "git": {
+    "commits": ["15d5cb0", "d28bc3a"],
+    "pushed": "928ab6a..d28bc3a",
+    "tag": "v6.3.2",
+    "release": "https://github.com/lza6/CF-Bypass-Research/releases/tag/v6.3.2"
+  },
+  "limitations": [
+    "Deployment still blocked: no domain or hosting credentials.",
+    "Real hosting headers unverified.",
+    "Mobile Lighthouse figures remain 2026-11-06.",
+    "English copy not reviewed by a native speaker.",
+    "9 high npm advisories remain in the dev-only @lhci/cli chain."
+  ]
+}

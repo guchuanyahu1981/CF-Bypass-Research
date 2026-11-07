@@ -1458,3 +1458,22 @@ CI 修复链（每个都是真实失败，不是跳过）：
 用户早先明确选择"只本地"。按停止条件，缺不可替代凭证时标记阻塞，不假装已上线。
 
 回滚方案（若将来部署）：静态站回滚 = 用上一个 release 的 `out/` 产物整体替换，无数据库、无状态、无迁移。
+
+### 独立审查与 v6.3.2（2026-11-08）
+
+独立只读审查复核 `74c72db..928ab6a`，报 3 个 Critical + 7 个 Should-fix，逐条核实后全部成立：
+
+| 级别 | 问题 | 修法 |
+|---|---|---|
+| Critical | `idle 3D` E2E 恒真（埋点被删，测试读 0） | 恢复 `__sceneFrames`；断言改为「指针触发帧 + 静止停帧」 |
+| Critical | 320/360px 流水线按钮被说明卡遮挡 | footer 列布局；窄屏排到画布下方；360px 逐按钮遮挡检查 |
+| Critical | `frameloop="demand"` 下指针视差失效 | canvas 显式 `invalidate()` + pointerleave 回正 |
+| Should fix | 场景标签丢 `valueMax`、输出 `463bytes` | 统一格式化 |
+| Should fix | 站点 6.3.0 / benchmarks 971 与 facts 漂移 | 同步 + content 断言 |
+| Should fix | 门禁自测未接 CI | 接入 `ci.yml` |
+| Should fix | importorskip 缺 Pillow；裸导入只扫顶层 | 补全 + `ast.walk` |
+| Should fix | 文档覆盖率命令仍是 `--cov=captchas` | 统一为 `--cov=captchas/` |
+
+复验：site e2e 19/19、content 11/11、axe 0、Lighthouse 100×4、Python 1023/7、门禁自测 18/18、CI 两个 workflow 全绿。
+
+发布：`v6.3.2`（tag + release），提交 `15d5cb0` / `d28bc3a`，推送 `928ab6a..d28bc3a`。
