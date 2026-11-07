@@ -53,6 +53,8 @@ jobs:
         run: python -m pytest tests/ -q --cov=solver --cov=captchas/ --cov-report=term-missing --cov-report=json:coverage.json
       - name: 逐模块 + 分范围覆盖率门禁（docs/coverage-policy.json）
         run: node scripts/check-coverage.mjs --coverage-json=coverage.json
+      - name: 门禁自测（注入漂移 → 必须变红）
+        run: node scripts/gates.selftest.mjs
       - name: 文档数字一致性（测试数/覆盖率/结论条数/版本号）
         run: node scripts/validate-docs.mjs --coverage-json=coverage.json
       - name: 接口规格一致性（openapi.json ↔ 源码路由）

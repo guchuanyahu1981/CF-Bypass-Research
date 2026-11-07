@@ -7,7 +7,7 @@
 | 项 | 门禁 | 检查命令 |
 |---|---|---|
 | Python 全量测试 | **0 failed，0 error** | `python -m pytest tests/ -q` |
-| Python 覆盖率（**分范围整体**） | `solver/` **≥ 80%**；`captchas/` **≥ 20%**（v6.3 实测 22.2%，门槛防它退回改造前的 2%） | `python -m pytest tests/ -q --cov=solver --cov=captchas --cov-report=json:coverage.json` + `node scripts/check-coverage.mjs` |
+| Python 覆盖率（**分范围整体**） | `solver/` **≥ 80%**；`captchas/` **≥ 20%**（v6.3 实测 22.2%，门槛防它退回改造前的 2%） | `python -m pytest tests/ -q --cov=solver --cov=captchas/ --cov-report=json:coverage.json` + `node scripts/check-coverage.mjs` |
 | Python 覆盖率（**逐模块**） | 每个 `solver/` **与 `captchas/`** 模块 ≥ `docs/coverage-policy.json` 里登记的值；**未登记 = 直接红** | 同上（`node scripts/check-coverage.mjs --coverage-json=coverage.json`） |
 | 嫁接层纳入门禁（v6.3） | `captchas/` 40 个文件、5,006 行、11 个厂商求解器**全部登记**；浏览器驱动主体按"能力边界"登记实测值，纯函数由 `tests/test_captchas_offline.py` 覆盖 | 同上 |
 | Python 覆盖率（**拆分产物专项**） | `bootstrap.py` **≥ 85%** · `auth.py` **≥ 85%** · `probe.py` **≥ 85%**（三者都是 v4.4 从 `service.py` 拆出来的，拆分当年留下过空洞：bootstrap 38% / auth 73% / probe 72%） | 同上（三项已登记进 `docs/coverage-policy.json`，实测 2026-11-04：bootstrap 87.3% / auth 95.8% / probe 93.4%） |

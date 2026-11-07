@@ -100,6 +100,24 @@ test('SEO keyword rows point to real pages and are fresh', () => {
   assert.ok(days <= (data.reviewIntervalDays ?? 120), `keywords are ${days} days old`);
 });
 
+test('site version and test counts track docs/facts.json', () => {
+  const facts = JSON.parse(fs.readFileSync(path.resolve('..', 'docs', 'facts.json'), 'utf8'));
+  for (const locale of LOCALES) {
+    assert.equal(
+      DICT[locale].changelog.items[0].version,
+      facts.version,
+      `${locale}: changelog head must be the released version (${facts.version})`
+    );
+    assert.ok(
+      DICT[locale].meta.changelog.title.includes(facts.version),
+      `${locale}: changelog title must name ${facts.version}`
+    );
+  }
+  const pythonTests = BENCHMARKS.find((benchmark) => benchmark.id === 'tests.python');
+  assert.ok(pythonTests, 'missing tests.python benchmark');
+  assert.equal(pythonTests.value, facts.python_tests, 'tests.python drifted from docs/facts.json');
+});
+
 test('home metrics reference real benchmark ids, and components do not hardcode numbers', () => {
   const ids = new Set(BENCHMARKS.map((benchmark) => benchmark.id));
   for (const locale of LOCALES) {

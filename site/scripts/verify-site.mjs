@@ -62,7 +62,7 @@ async function checkRoute(page, route) {
       canonical: document.querySelector('link[rel="canonical"]')?.getAttribute('href') || '',
       alternates: document.querySelectorAll('link[rel="alternate"][hreflang]').length,
       robots: document.querySelector('meta[name="robots"]')?.getAttribute('content') || '',
-      scene: document.querySelector('.scene')?.dataset.scene || null,
+      scene: document.querySelector('.scene-wrap')?.dataset.scene || null,
       jsonld,
     };
   });
@@ -123,7 +123,7 @@ try {
   await reducedPage.goto(BASE + '/', { waitUntil: 'networkidle' });
   await reducedPage.waitForTimeout(2000);
   report.reducedMotion = await reducedPage.evaluate(() => ({
-    tier: document.querySelector('.scene')?.dataset.scene,
+    tier: document.querySelector('.scene-wrap')?.dataset.scene,
     canvas: document.querySelectorAll('.scene canvas').length,
   }));
   if (report.reducedMotion.tier !== 'static') fail('reduced-motion: expected static');
@@ -144,7 +144,7 @@ try {
   await page.goto(BASE + '/', { waitUntil: 'networkidle' });
   await page.waitForTimeout(1500);
   report.webglDisabled = await page.evaluate(() => ({
-    tier: document.querySelector('.scene')?.dataset.scene,
+    tier: document.querySelector('.scene-wrap')?.dataset.scene,
     canvas: document.querySelectorAll('.scene canvas').length,
   }));
   if (report.webglDisabled.tier !== 'static') fail('webgl-disabled: expected static');

@@ -146,9 +146,9 @@ const zh: Dict = {
         '仅用于安全研究与授权测试。说明授权边界、数据处理、披露方式、与 Cloudflare, Inc. 的非关联声明与免责声明；不提供目标清单、批量扫描入口或绕过访问控制的教程。',
     },
     changelog: {
-      title: '版本记录 — CF Solver｜6.3.0',
+      title: '版本记录 — CF Solver｜6.3.2',
       description:
-        '6.3.0 出口实测与流量录制、6.2.2 看门狗、6.2.0 YesCaptcha 兼容层与 V1 契约；每个版本的真实能力变化与已知限制。完整历史见仓库 CHANGELOG.md。',
+        '6.3.2 独立审查修复、6.3.1 公开站收口与 CI 覆盖率门禁、6.3.0 出口实测与流量录制、6.2.2 看门狗、6.2.0 YesCaptcha 兼容层与 V1 契约；每个版本的真实能力变化与已知限制。完整历史见仓库 CHANGELOG.md。',
     },
   },
   nav: {
@@ -345,6 +345,11 @@ const zh: Dict = {
     lede: '只列能力变化，不列营销数字。完整变更见仓库 CHANGELOG.md。',
     items: [
       {
+        version: '6.3.2',
+        date: '2026-11-08',
+        body: '独立审查修复：3D 场景指针视差与静止停帧、移动端控件遮挡、站点版本与测试数同步。',
+      },
+      {
         version: '6.3.0',
         date: '2026-11-05',
         body: '出口 IP 实测校验、审计日志可看、真机流量录制、出口进 UI。',
@@ -406,9 +411,9 @@ const en: Dict = {
         'For security research and authorized testing only. Authorization boundaries, data handling, disclosure, non-affiliation, and disclaimer.',
     },
     changelog: {
-      title: 'Changelog — CF Solver | 6.3.0',
+      title: 'Changelog — CF Solver | 6.3.2',
       description:
-        '6.3.0 egress verification and traffic capture, 6.2.2 watchdog, 6.2.0 YesCaptcha compatibility and V1 contract. Real capability changes per release.',
+        '6.3.2 review fixes, 6.3.1 site close-out, 6.3.0 egress verification, 6.2.2 watchdog, 6.2.0 YesCaptcha. Real capability changes per release.',
     },
   },
   nav: {
@@ -604,6 +609,7 @@ const en: Dict = {
     title: 'Changelog',
     lede: 'Capability changes only, not marketing numbers. The full history is in CHANGELOG.md.',
     items: [
+      { version: '6.3.2', date: '2026-11-08', body: 'Review fixes: pointer parallax and idle stop in the 3D scene, mobile control overlap, site version and test-count sync.' },
       { version: '6.3.0', date: '2026-11-05', body: 'Egress IP verification, readable audit logs, real traffic capture, egress in the UI.' },
       { version: '6.2.2', date: '2026-11-05', body: 'Watchdog: a wedged worker exits with code 75 and the supervisor starts a clean process.' },
       { version: '6.2.0', date: '2026-11-05', body: 'YesCaptcha compatibility for 19 task types + ecosystem error codes; 7 main-chain and 12 grafted types.' },

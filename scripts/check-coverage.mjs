@@ -23,7 +23,7 @@
  *
  * 零依赖、不联网。
  * 用法：
- *   python -m pytest tests/ -q --cov=solver --cov=captchas --cov-report=json:coverage.json
+ *   python -m pytest tests/ -q --cov=solver --cov=captchas/ --cov-report=json:coverage.json
  *   node scripts/check-coverage.mjs [--coverage-json=coverage.json] [--policy=docs/coverage-policy.json]
  */
 
@@ -54,7 +54,7 @@ function norm(p) {
 function main() {
   if (!existsSync(COV_PATH)) {
     console.error(`找不到覆盖率报告 ${COV_PATH}`);
-    console.error("先跑：python -m pytest tests/ -q --cov=solver --cov=captchas --cov-report=json:coverage.json");
+    console.error("先跑：python -m pytest tests/ -q --cov=solver --cov=captchas/ --cov-report=json:coverage.json");
     process.exit(2);
   }
   if (!existsSync(POLICY_PATH)) {

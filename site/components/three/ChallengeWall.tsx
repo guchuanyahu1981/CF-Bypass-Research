@@ -1,6 +1,7 @@
 'use client';
 
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
+import { useEffect, useRef } from 'react';
 
 const PANELS = [
   { label: 'jsd', x: -2.1, color: '#4DE3C1' },
@@ -44,13 +45,39 @@ function Token({ active }: { active: boolean }) {
 }
 
 function CameraRig() {
-  const { camera, pointer, invalidate } = useThree();
+  const { camera, pointer, invalidate, gl } = useThree();
+  const leaving = useRef(false);
+
+  // `frameloop="demand"` means pointer movement alone does not schedule a frame.
+  // R3F only invalidates on pointer handlers attached to objects, and these meshes
+  // have none, so wire the DOM element to invalidate explicitly.
+  useEffect(() => {
+    const el = gl.domElement;
+    const onMove = () => {
+      leaving.current = false;
+      invalidate();
+    };
+    const onLeave = () => {
+      leaving.current = true;
+      invalidate();
+    };
+    el.addEventListener('pointermove', onMove);
+    el.addEventListener('pointerleave', onLeave);
+    return () => {
+      el.removeEventListener('pointermove', onMove);
+      el.removeEventListener('pointerleave', onLeave);
+    };
+  }, [gl, invalidate]);
+
   /* eslint-disable react-hooks/immutability -- R3F cameras are imperative three.js
      objects; mutating position inside useFrame is the documented pattern and the
      React Compiler rule does not model it. */
   useFrame(() => {
-    const targetX = pointer.x * 0.35;
-    const targetY = pointer.y * 0.18;
+    const w = window as Window & { __CF_SCENE_METRICS?: boolean; __sceneFrames?: number };
+    if (w.__CF_SCENE_METRICS) w.__sceneFrames = (w.__sceneFrames ?? 0) + 1;
+
+    const targetX = leaving.current ? 0 : pointer.x * 0.35;
+    const targetY = leaving.current ? 0 : pointer.y * 0.18;
     const dx = targetX - camera.position.x;
     const dy = targetY - camera.position.y;
     if (Math.abs(dx) < 0.002 && Math.abs(dy) < 0.002) return;

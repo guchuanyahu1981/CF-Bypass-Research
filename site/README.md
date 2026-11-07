@@ -60,7 +60,7 @@ canonical URLs.
 |---|---|
 | `NEXT_PUBLIC_SITE_URL` | Required for a production build. Canonical/OG/hreflang/sitemap origin, origin only (no path). |
 | `SITE_ALLOW_PLACEHOLDER` | Set to `1` for a local-only build: `NEXT_PUBLIC_SITE_URL` may be unset, canonical uses `http://localhost:3000`, and the footer renders a "local preview" notice. |
-| `SITE_BASE_PATH` | Sub-path hosting (for example a GitHub Pages project path). Empty by default. |
+| `SITE_BASE_PATH` | Build-time asset prefix for sub-path hosting. Canonical/hreflang/sitemap still assume an origin-root deployment; a non-empty base path is untested, and `check-env` rejects a path inside `NEXT_PUBLIC_SITE_URL`. |
 | `SITE_BASE_URL` | Base URL used by `verify:site` and `test:e2e`. |
 | `CHROME_PATH` | Chromium executable for Playwright/Lighthouse when not installed by the package. |
 
@@ -107,14 +107,14 @@ headers.
 | `npm run build` (`NEXT_PUBLIC_SITE_URL=https://cf-solver.dev`) | 20 static routes, `out/404.html`, no `localhost`/placeholder leakage |
 | `npm run verify:csp` | 17 HTML files, 20 inline-script hashes |
 | `npm run verify:out` | 12 indexable pages, 2 noindex pages, 404 noindex, OG 1200×630 |
-| `npm run test:content` | 10/10 (adds legal copy, benchmark-id references, hardcoded-number scan) |
+| `npm run test:content` | 11/11 (legal copy, benchmark-id references, hardcoded-number scan, version sync) |
 | `npm run test:tokens` | 34 files, 0 hardcoded colors |
 | `npm run test:contrast` | dark/light text ≥ 4.5, focus ≥ 3 |
 | `npm run verify:site` | 14 routes, axe 0, reduced-motion static, no-WebGL static |
-| `npm run test:e2e` | 18/18 (runtime errors, keyboard focus ring, reduced-motion, scene controls, static controls, idle 3D, CLS) |
+| `npm run test:e2e` | 19/19 (runtime errors, keyboard focus ring, reduced-motion, scene controls, static controls, 360px controls, pointer-triggered + idle 3D, CLS) |
 | Lighthouse desktop (2026-11-08 re-run) | Perf 100 / A11y 100 / BP 100 / SEO 100; LCP 0.4s/0.3s, CLS 0, TBT 0ms |
 | Lighthouse mobile (2026-11-06) | Perf 98 / A11y 100 / BP 100 / SEO 100; LCP 1.2s/1.1s, TBT 150/140ms |
-| Initial JS gzip | 227.2 KB (budget 250 KB) |
+| Initial JS gzip | 227.7 KB (budget 250 KB) |
 | 3D chunk gzip | 236.2 KB (budget 260 KB) |
 | CSS gzip | 6.7 KB |
 | `npm audit --omit=dev` | 0 vulnerabilities |

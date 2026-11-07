@@ -119,10 +119,16 @@ function PipelineFallback({ locale }: { locale: Locale }) {
   );
 }
 
+const UNIT_SUFFIX: Record<string, string> = { ms: 'ms', s: 's', qps: 'QPS', bytes: 'B', mb: 'MB', count: '', percent: '%' };
+
 function shortValue(benchmarkId: string): string {
   const benchmark = BENCHMARKS.find((item) => item.id === benchmarkId);
   if (!benchmark) return '';
-  return `${benchmark.value}${benchmark.unit === 'percent' ? '%' : benchmark.unit === 'count' ? '' : benchmark.unit}`;
+  const n = Number.isInteger(benchmark.value)
+    ? String(benchmark.value)
+    : benchmark.value.toFixed(2).replace(/0$/, '');
+  const max = benchmark.valueMax !== undefined ? `–${benchmark.valueMax}` : '';
+  return `${n}${max}${UNIT_SUFFIX[benchmark.unit] ?? benchmark.unit}`;
 }
 
 function describe(node: SceneNode, locale: Locale): string {
@@ -187,51 +193,52 @@ export default function SceneShell({ variant, locale }: { variant: Variant; loca
         : 'Decorative 3D scene; equivalent data is in the list/table below';
 
   return (
-    <div
-      ref={ref}
-      className={`scene${tier === 'static' ? ' scene--static' : ''}`}
-      data-scene={tier}
-      data-variant={variant}
-    >
-      {tier === 'static' || !armed ? (
-        Fallback
-      ) : (
-        <div aria-hidden="true" style={{ position: 'absolute', inset: 0 }}>
-          <SceneBoundary fallback={Fallback}>
-            {variant === 'wall' ? <ChallengeWall tier={tier} selected={selected} /> : <Pipeline tier={tier} selected={selected} />}
-          </SceneBoundary>
-        </div>
-      )}
-
-      <span className="scene__caption">{caption}</span>
-
+    <div className="scene-wrap" data-scene={tier} data-variant={variant}>
       <div
-        className="scene__controls"
-        role="group"
-        aria-label={locale === 'zh' ? '选择场景节点' : 'Select a scene node'}
+        ref={ref}
+        className={`scene${tier === 'static' ? ' scene--static' : ''}`}
       >
-        {nodes.map((node) => (
-          <button
-            key={node.key}
-            type="button"
-            aria-pressed={selected === node.key}
-            onClick={() => setSelected(node.key)}
-          >
-            {node.label}
-          </button>
-        ))}
+        {tier === 'static' || !armed ? (
+          Fallback
+        ) : (
+          <div aria-hidden="true" style={{ position: 'absolute', inset: 0 }}>
+            <SceneBoundary fallback={Fallback}>
+              {variant === 'wall' ? <ChallengeWall tier={tier} selected={selected} /> : <Pipeline tier={tier} selected={selected} />}
+            </SceneBoundary>
+          </div>
+        )}
+
+        <span className="scene__caption">{caption}</span>
+
+        <div className="scene__labels" aria-hidden="true">
+          {nodes.map((node) => (
+            <span className="scene__label" key={node.key}>
+              {node.key === 'backend' ? 'Backend' : `${node.label}${node.benchmarkId ? ` · ${shortValue(node.benchmarkId)}` : ''}`}
+            </span>
+          ))}
+        </div>
       </div>
 
-      <p className="scene__panel" aria-live="polite">
-        <strong>{current.label}</strong> <span>{describe(current, locale)}</span>
-      </p>
-
-      <div className="scene__labels" aria-hidden="true">
-        {nodes.map((node) => (
-          <span className="scene__label" key={node.key}>
-            {node.key === 'backend' ? 'Backend' : `${node.label}${node.benchmarkId ? ` · ${shortValue(node.benchmarkId)}` : ''}`}
-          </span>
-        ))}
+      <div className="scene__footer">
+        <p className="scene__panel" aria-live="polite">
+          <strong>{current.label}</strong> <span>{describe(current, locale)}</span>
+        </p>
+        <div
+          className="scene__controls"
+          role="group"
+          aria-label={locale === 'zh' ? '选择场景节点' : 'Select a scene node'}
+        >
+          {nodes.map((node) => (
+            <button
+              key={node.key}
+              type="button"
+              aria-pressed={selected === node.key}
+              onClick={() => setSelected(node.key)}
+            >
+              {node.label}
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );

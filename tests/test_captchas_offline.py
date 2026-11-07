@@ -75,8 +75,8 @@ def fake_cloakbrowser(monkeypatch):
 
 VENDOR_OPTIONAL_DEPS = {
     "aliyun": ("cv2",),
-    "arkose": ("onnxruntime",),
-    "recaptcha": ("PIL",),
+    "arkose": ("onnxruntime", "PIL"),
+    "recaptcha": ("onnxruntime", "PIL"),
 }
 
 
@@ -113,7 +113,9 @@ def test_no_bare_intra_package_imports():
     bad = []
     for path in sorted(CAPTCHAS.rglob("*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"))
-        for node in tree.body:
+        # walk, not body: a bare import hidden in try/except or TYPE_CHECKING is still
+        # the same module-duplication bug.
+        for node in ast.walk(tree):
             if isinstance(node, ast.ImportFrom) and node.module:
                 top = node.module.split(".")[0]
             elif isinstance(node, ast.Import):
@@ -307,7 +309,7 @@ def test_aliyun_invert_nails_the_quadratic(fake_cloakbrowser):
 
 
 def test_recaptcha_normalize_target_strips_articles_and_aliases(fake_cloakbrowser):
-    _require("onnxruntime")
+    _require("onnxruntime", "PIL")
     onnx = __import__("captchas.recaptcha.onnx_classifier", fromlist=["*"])
     alias_key, alias_cls = next(iter(onnx._TARGET_ALIASES.items()))
     assert onnx._normalize_target(alias_key.upper()) == alias_cls

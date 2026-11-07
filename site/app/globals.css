@@ -171,6 +171,7 @@ a:hover { color: color-mix(in srgb, var(--primary) 78%, var(--ink)); }
 .pipeline__item strong { display: block; font-size: 13px; }
 .pipeline__item span { color: var(--muted); font-size: 13px; }
 
+.scene-wrap { position: relative; display: grid; gap: 8px; }
 .scene {
   position: relative; min-height: 380px; border: 1px solid var(--line); border-radius: var(--radius);
   background:
@@ -179,7 +180,7 @@ a:hover { color: color-mix(in srgb, var(--primary) 78%, var(--ink)); }
   overflow: hidden;
 }
 .scene canvas { display: block; width: 100% !important; height: 100% !important; }
-.scene__fallback { display: grid; place-items: center; min-height: 380px; padding: 16px 24px 100px; }
+.scene__fallback { display: grid; place-items: center; min-height: 380px; padding: 16px 24px 116px; }
 .scene__fallback svg { width: min(100%, 460px); height: auto; }
 .scene__labels {
   position: absolute; left: 0; right: 0; top: 52%; transform: translateY(-50%);
@@ -192,10 +193,15 @@ a:hover { color: color-mix(in srgb, var(--primary) 78%, var(--ink)); }
   font-size: 11px; font-weight: 600; white-space: nowrap;
 }
 .scene__caption { position: absolute; left: 14px; top: 12px; right: 14px; color: var(--muted); font-size: 11px; }
-.scene__controls {
+/* Panel above controls in a column, anchored to the bottom of the wrap: on narrow
+   viewports the five pipeline buttons wrap to two rows, and an absolutely placed
+   panel at a fixed offset used to cover them. */
+.scene__footer {
   position: absolute; left: 12px; right: 12px; bottom: 12px;
-  display: flex; flex-wrap: wrap; gap: 6px; justify-content: center;
+  display: flex; flex-direction: column; gap: 8px; pointer-events: none;
 }
+.scene__footer > * { pointer-events: auto; }
+.scene__controls { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
 .scene__controls button {
   min-width: 44px; height: 44px; padding: 0 10px; border-radius: 10px; border: 1px solid var(--line);
   background: color-mix(in srgb, var(--surface) 90%, transparent); color: var(--ink);
@@ -204,7 +210,7 @@ a:hover { color: color-mix(in srgb, var(--primary) 78%, var(--ink)); }
 }
 .scene__controls button[aria-pressed="true"] { border-color: var(--primary); color: var(--primary); }
 .scene__panel {
-  position: absolute; left: 12px; right: 12px; bottom: 64px; margin: 0;
+  margin: 0;
   padding: 8px 12px; border-radius: 10px; border: 1px solid var(--line);
   background: color-mix(in srgb, var(--surface) 92%, transparent);
   color: var(--ink); font-size: 12px; line-height: 1.5;
@@ -281,9 +287,15 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: now
   .mobile-menu nav a { display: block; padding: 10px 12px; color: var(--ink); text-decoration: none; border-radius: 8px; }
   .mobile-menu nav a:hover { background: var(--surface-2); }
 }
+@media (max-width: 640px) {
+  /* Below 640px the scene footer is stacked under the canvas instead of overlaying it:
+     five pipeline buttons wrap to two rows and would otherwise sit under the panel. */
+  .scene__footer { position: static; }
+  .scene { min-height: 260px; }
+  .scene__fallback { min-height: 260px; padding: 12px 16px; }
+}
 @media (max-width: 480px) {
   .hero { padding-top: 48px; }
-  .scene, .scene__fallback { min-height: 300px; }
   .section { padding: 40px 0; }
 }
 

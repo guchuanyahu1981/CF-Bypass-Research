@@ -2,7 +2,7 @@
 // Local previews opt in explicitly: SITE_ALLOW_PLACEHOLDER=1.
 import { pathToFileURL } from 'node:url';
 
-const PLACEHOLDER_HOST = /^(localhost|127\.0\.0\.1|\[::1\]|0\.0\.0\.0)$/i;
+const PLACEHOLDER_HOST = /^(localhost\.?|127\.\d+\.\d+\.\d+|\[::1\]|0\.0\.0\.0)$/i;
 const RESERVED_HOST = /(^|\.)(example\.(com|org|net)|example|invalid|test)$/i;
 
 export function resolveSiteUrl(env = process.env) {

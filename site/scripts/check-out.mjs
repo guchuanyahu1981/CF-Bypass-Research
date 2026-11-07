@@ -8,7 +8,7 @@ const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000').r
 const ALLOW_PLACEHOLDER = process.env.SITE_ALLOW_PLACEHOLDER === '1';
 // Only the build-time placeholder origin is leakage; docs legitimately reference
 // 127.0.0.1:8878 for local runs and redacted example domains for test targets.
-const PLACEHOLDER_RE = /https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0):3000\b/i;
+const PLACEHOLDER_RE = /https?:\/\/(localhost\.?|127\.\d+\.\d+\.\d+|\[::1\]|0\.0\.0\.0):3000\b/i;
 
 const failures = [];
 function fail(message) {

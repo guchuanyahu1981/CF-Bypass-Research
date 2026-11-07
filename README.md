@@ -375,7 +375,7 @@ cl, err := pool.Get(ctx, target)      // 同域永远打到同一个 worker
 
 ```bash
 python -m pytest tests/ -q                      # Python 侧（注入假浏览器）
-python -m pytest tests/ -q --cov=solver --cov=captchas --cov-report=json:coverage.json  # 带覆盖率（门禁在下一步）
+python -m pytest tests/ -q --cov=solver --cov=captchas/ --cov-report=json:coverage.json  # 带覆盖率（门禁在下一步）
 node scripts/check-coverage.mjs                 # 逐模块 + 分范围（solver ≥80 / captchas ≥20）
 cd gocfsolve && go vet ./... && go test -race ./...           # Go 侧（httptest + 竞态检测）
 node scripts/validate-findings.mjs              # 校验研究结论的证据链

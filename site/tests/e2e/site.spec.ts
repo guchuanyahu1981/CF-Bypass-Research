@@ -109,7 +109,33 @@ test('scene falls back to static but keeps its controls', async ({ page }) => {
   await expect(page.locator('[data-variant="wall"]')).toHaveAttribute('data-scene', 'static');
 });
 
-test('3D scene is idle while the pointer is still', async ({ page }) => {
+test('pipeline controls stay clickable at 360px', async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 800 });
+  await page.goto('/', { waitUntil: 'networkidle' });
+  const pipeline = page.locator('[data-variant="pipeline"]');
+  const buttons = pipeline.locator('.scene__controls button');
+  await expect(buttons).toHaveCount(5);
+
+  for (let i = 0; i < 5; i += 1) {
+    const button = buttons.nth(i);
+    const label = (await button.innerText()).trim();
+    await button.scrollIntoViewIfNeeded();
+    const box = await button.boundingBox();
+    expect(box, `${label}: no bounding box`).not.toBeNull();
+    const hit = await page.evaluate(
+      ({ x, y }) => {
+        const el = document.elementFromPoint(x, y);
+        return el ? (el.closest('button') as HTMLElement | null)?.innerText.trim() ?? el.tagName : null;
+      },
+      { x: box!.x + box!.width / 2, y: box!.y + box!.height / 2 }
+    );
+    expect(hit, `${label}: covered by another element at its centre`).toBe(label);
+    await button.click({ timeout: 5000 });
+    await expect(button).toHaveAttribute('aria-pressed', 'true');
+  }
+});
+
+test('3D scene renders on pointer input and goes idle when still', async ({ page }) => {
   await page.goto('/', { waitUntil: 'networkidle' });
   const tier = await page.locator('[data-variant="wall"]').getAttribute('data-scene');
   test.skip(tier !== 'full', `scene tier is ${tier} in this environment`);
@@ -118,11 +144,20 @@ test('3D scene is idle while the pointer is still', async ({ page }) => {
     window.__CF_SCENE_METRICS = true;
     window.__sceneFrames = 0;
   });
-  await page.waitForTimeout(1500); // let the pointer-driven camera settle
+
+  const canvas = page.locator('[data-variant="wall"] canvas');
+  await canvas.hover();
+  await page.mouse.move(220, 220);
+  await page.mouse.move(320, 280);
+  await page.waitForTimeout(300);
+  const duringPointer = await page.evaluate(() => window.__sceneFrames ?? 0);
+  expect(duringPointer, 'pointer movement should schedule frames').toBeGreaterThan(0);
+
+  await page.waitForTimeout(1200); // let the camera settle
   const start = await page.evaluate(() => window.__sceneFrames ?? 0);
   await page.waitForTimeout(1000);
   const end = await page.evaluate(() => window.__sceneFrames ?? 0);
-  expect(end - start).toBeLessThanOrEqual(1);
+  expect(end - start, 'idle scene must stop rendering').toBeLessThanOrEqual(1);
 });
 
 test('layout shift stays below 0.05', async ({ page }) => {
