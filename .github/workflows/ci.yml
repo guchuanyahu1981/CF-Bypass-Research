@@ -48,8 +48,10 @@ jobs:
       - name: 语法检查
         run: python -m compileall -q solver scripts tests captchas
       - name: 测试 + 覆盖率门槛
-        run: python -m pytest tests/ -q --cov=solver --cov-report=term-missing --cov-report=json:coverage.json --cov-fail-under=80
-      - name: 逐模块覆盖率门禁（docs/coverage-policy.json）
+        # --cov-fail-under 已下沉到 check-coverage.mjs 的 _scopes：
+        # solver/ 与 captchas/ 的基线差得远，混在一个整体数字里会互相抵消。
+        run: python -m pytest tests/ -q --cov=solver --cov=captchas/ --cov-report=term-missing --cov-report=json:coverage.json
+      - name: 逐模块 + 分范围覆盖率门禁（docs/coverage-policy.json）
         run: node scripts/check-coverage.mjs --coverage-json=coverage.json
       - name: 文档数字一致性（测试数/覆盖率/结论条数/版本号）
         run: node scripts/validate-docs.mjs --coverage-json=coverage.json
