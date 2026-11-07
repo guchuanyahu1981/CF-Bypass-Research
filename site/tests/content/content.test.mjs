@@ -146,8 +146,11 @@ test('site updatedAt is a real date that covers the latest release', () => {
   assert.match(SITE.updatedAt, /^\d{4}-\d{2}-\d{2}$/, 'updatedAt is not YYYY-MM-DD');
   assert.ok(!Number.isNaN(Date.parse(SITE.updatedAt)), 'updatedAt is not a real date');
   const now = new Date();
-  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-  assert.ok(SITE.updatedAt <= today, `updatedAt ${SITE.updatedAt} is in the future (local ${today})`);
+  const utcToday = now.toISOString().slice(0, 10);
+  // updatedAt is written in the author's local date. A UTC runner can legitimately see
+  // "tomorrow" for an author in UTC+14, so allow one day of lead rather than failing.
+  const utcTomorrow = new Date(now.getTime() + 86_400_000).toISOString().slice(0, 10);
+  assert.ok(SITE.updatedAt <= utcTomorrow, `updatedAt ${SITE.updatedAt} is in the future (UTC ${utcToday})`);
   for (const locale of LOCALES) {
     const latest = DICT[locale].changelog.items[0].date;
     assert.ok(SITE.updatedAt >= latest, `${locale}: updatedAt ${SITE.updatedAt} predates release ${latest}`);
