@@ -1,6 +1,6 @@
 {
   "base": "http://127.0.0.1:3100",
-  "generatedAt": "2026-11-07T20:06:50.783Z",
+  "generatedAt": "2026-11-07T22:08:11.674Z",
   "routes": [
     {
       "route": "/",
@@ -65,9 +65,9 @@
     {
       "route": "/changelog/",
       "lang": "zh-CN",
-      "title": "版本记录 — CF Solver｜6.3.0",
+      "title": "版本记录 — CF Solver｜6.3.2",
       "h1": 1,
-      "description": "6.3.0 出口实测与流量录制、6.2.2 看门狗、6.2.0 YesCaptcha 兼容层与 V1 契约；每个版本的真实能力变化与已知限制。完整历史见仓库 CHANGELOG.md。",
+      "description": "6.3.2 独立审查修复、6.3.1 公开站收口与 CI 覆盖率门禁、6.3.0 出口实测与流量录制、6.2.2 看门狗、6.2.0 YesCaptcha 兼容层与 V1 契约；每个版本的真实能力变化与已知限制。完整历史见仓库 CHANGELOG.md。",
       "canonical": "https://cf-solver.dev/changelog/",
       "alternates": 3,
       "robots": "",
@@ -149,9 +149,9 @@
     {
       "route": "/en/changelog/",
       "lang": "en",
-      "title": "Changelog — CF Solver | 6.3.0",
+      "title": "Changelog — CF Solver | 6.3.2",
       "h1": 1,
-      "description": "6.3.0 egress verification and traffic capture, 6.2.2 watchdog, 6.2.0 YesCaptcha compatibility and V1 contract. Real capability changes per release.",
+      "description": "6.3.2 review fixes, 6.3.1 site close-out, 6.3.0 egress verification, 6.2.2 watchdog, 6.2.0 YesCaptcha. Real capability changes per release.",
       "canonical": "https://cf-solver.dev/en/changelog/",
       "alternates": 3,
       "robots": "",

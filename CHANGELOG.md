@@ -1,3 +1,31 @@
+## [6.3.2] - 2026-11-08
+
+主题：**独立审查发现的三处真缺陷，以及它们暴露出的门禁盲区。**
+
+### 修复
+
+- `idle 3D` E2E 恒真：生产端的 `__sceneFrames` 埋点在重构中被删除，测试读到的永远是 0，
+  改回 `frameloop="always"` 也能通过。恢复埋点，断言改为「指针移动必须产生帧、
+  静止后停止渲染」。
+- 320/360px 下流水线 5 个按钮被说明卡遮挡：`.scene__footer` 改为列布局，
+  窄屏下把控件排到画布下方；新增 360px 逐按钮可点击断言（含 elementFromPoint 遮挡检查）。
+- `frameloop="demand"` 下指针视差永不运行：R3F 不会因 pointermove 自动调度帧，
+  改为在 canvas 上显式 `invalidate()`，并补 pointerleave 回正。
+- 场景标签丢 `valueMax`、直接输出单位枚举（`463bytes`）：改用与说明卡同一套格式化。
+- 公开站仍宣称 6.3.0、benchmarks 仍写 971 个测试：与 `docs/facts.json` 同步，
+  并加 content 断言（changelog 首项 = facts.version，tests.python = facts.python_tests）。
+- 门禁自测 `gates.selftest.mjs` 从未接进 CI：接入 ci.yml。
+- `importorskip` 依赖清单缺 Pillow（arkose / recaptcha 的模块级导入）；
+  包内裸导入检查只扫顶层 `tree.body`（放进 try 就绕过）：补全依赖并改用 `ast.walk`。
+- 文档与提示里的覆盖率命令仍是模块形式 `--cov=captchas`：统一为 CI 实证可用的
+  `--cov=captchas/`。
+- `check-env` / `check-out` 的占位符匹配漏掉 `localhost.`、`127.0.0.2`、`[::1]`。
+
+### 验证
+
+site e2e 19/19（新增移动端控件与"指针触发 + 静止停止"两项）、axe 0、
+Lighthouse 桌面 100/100/100/100、Python 1023 passed / 7 skipped、门禁自测 18/18。
+
 ## [6.3.1] - 2026-11-08
 
 主题：**公开站从"能读"变成"可核对"，并把文档里声称的东西补齐。**

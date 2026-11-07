@@ -12,12 +12,12 @@
 | 产物校验 | `npm run verify:out`（build 的 postbuild 自动跑） | 12 可索引页、2 noindex 页、404 noindex、`/og/{zh,en}.png` 1200×630、无 `:3000` 占位残留 | `seo-artifacts.json` |
 | CSP 生成/校验 | `npm run csp && npm run verify:csp` | 17 个 HTML、20 个内联脚本 hash；`script-src` 无 `unsafe-inline`/`unsafe-eval` | `site-verify.json` |
 | 站点验收 | `npm run verify:site` | 14 路由、axe 0、reduced-motion static、no-WebGL static、404 title/noindex | `site-verify.json` |
-| 运行时 e2e | `npm run test:e2e` | 18/18：12 页无 pageerror/console.error、键盘焦点环、reduced-motion、场景控件选择、static 保留控件、静止无自动旋转、CLS | 命令输出 |
-| 内容一致性 | `npm run test:content` | 10/10（新增合规文案、benchmark 引用与硬编码数字扫描） | 命令输出 |
+| 运行时 e2e | `npm run test:e2e` | 19/19：12 页无 pageerror/console.error、键盘焦点环、reduced-motion、场景控件选择、static 保留控件、静止无自动旋转、CLS | 命令输出 |
+| 内容一致性 | `npm run test:content` | 11/11（合规文案、benchmark 引用、硬编码数字扫描、版本同步） | 命令输出 |
 | 令牌/对比度/SEO | `npm run test:tokens` / `test:contrast` / `test:seo` | 34 文件 0 硬编码色；文本 ≥4.5，焦点 ≥3；12 行关键词，0 天未复核 | 命令输出 |
 | Lighthouse 桌面 | `npx lhci autorun --config=lighthouserc.json` | 2026-11-08 复跑：100/100/100/100；LCP 0.4s/0.3s、CLS 0、TBT 0ms | `lighthouse-summary.json` |
 | Lighthouse 移动 | `npx lhci autorun --config=lighthouserc.mobile.json` | 2026-11-06：98/100/100/100；LCP 1.2s/1.1s、TBT 150/140ms | `lighthouse-summary.json` |
-| 包体 | `zlib.gzipSync(level=9)` | 初始 JS 232,745 B（227.2 KB）；3D chunk 241,853 B（236.2 KB）；CSS 5,438 B | `bundle.json` |
+| 包体 | `zlib.gzipSync(level=9)` | 初始 JS 233,186 B（227.7 KB）；3D chunk 241,853 B（236.2 KB）；CSS 5,438 B | `bundle.json` |
 | 供应链 | `npm audit --omit=dev` | 生产依赖 0 漏洞；dev 工具链例外见 §9.3 | 命令输出 |
 | 3D 降级/帧率 | Chromium + SwiftShader + CPU 节流 | 1x/4x/10x = 60fps；20x = 21.8fps 或自动 static；reduced/no-WebGL = static | `3d-fps.json` |
 | Python 全量 | `python -m pytest -q` | 1023 passed, 7 skipped（2026-11-08 复跑） | `python-tests.txt` |

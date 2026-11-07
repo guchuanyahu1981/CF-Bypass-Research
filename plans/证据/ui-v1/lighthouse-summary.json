@@ -2,7 +2,7 @@
   "measuredAt": "2026-11-08",
   "tool": "Lighthouse CI 0.16.0, Chromium 1248, local static server",
   "desktop": [
-    { "url": "http://127.0.0.1:3100/", "performance": 100, "accessibility": 100, "bestPractices": 100, "seo": 100, "lcp": "0.4 s", "cls": "0", "tbt": "0 ms" },
+    { "url": "http://127.0.0.1:3100/", "performance": 100, "accessibility": 100, "bestPractices": 100, "seo": 100, "lcp": "0.3 s", "cls": "0", "tbt": "0 ms" },
     { "url": "http://127.0.0.1:3100/en/", "performance": 100, "accessibility": 100, "bestPractices": 100, "seo": 100, "lcp": "0.3 s", "cls": "0", "tbt": "0 ms" }
   ],
   "mobile": [

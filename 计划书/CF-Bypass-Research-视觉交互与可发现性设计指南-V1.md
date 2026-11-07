@@ -625,7 +625,7 @@ H1/title 用 "Cloudflare Bypass / 过盾"；"Challenge Solver" 放到副标题�
 
 可访问性：
 
-- canvas 外层 `role="img"` + `aria-label` 一句话；canvas 本身 `aria-hidden="true"`。
+- 场景是装饰性的：canvas 包在 `aria-hidden="true"` 的容器里，不提供 role/label；等价信息在说明卡、场景下方的表格与文本列表里。屏幕阅读器读这些，不读 canvas。
 - 场景旁必须有 `<table>` 或 `<dl>` 等价数据；键盘用户通过 DOM 按钮控制场景选中态。
 - 焦点顺序：先文本，后场景控制；场景控制按钮 44×44。
 - 颜色不是唯一状态：节点有文字标签，状态有图标 + 文本。
@@ -650,7 +650,7 @@ H1/title 用 "Cloudflare Bypass / 过盾"；"Challenge Solver" 放到副标题�
 
 - Playwright 启动参数加 `--disable-webgl` → 断言 `static` 档可见、等价表格存在、无 console error。
 - `reducedMotion: 'reduce'` → 断言不挂载 canvas（或 `data-scene="static"`），且场景控制按钮仍在。
-- 正常档 → 断言 canvas 存在、有 `aria-label`、无 pageerror；3 个墙面按钮 / 5 个节点按钮可聚焦，点击后 `aria-pressed` 与说明卡同步。
+- 正常档 → 断言 canvas 存在、无 pageerror；3 个墙面按钮 / 5 个节点按钮可聚焦，点击后 `aria-pressed` 与说明卡同步；移动端 360px 下 5 个按钮可点击（不被说明卡遮挡）。
 - 静止无自动旋转 → 打开帧计数，静止 1s 内新增帧 ≤ 1。
 - 截图：桌面/移动 × 深/浅 × full/static，共 8 张，落 `plans/证据/ui-v1/`。
 - FPS 采样只在本地人工做一次（`requestAnimationFrame` 计数 5s），不作为 CI 门禁；低端设备实测结果写进证据文件。
@@ -1379,12 +1379,34 @@ V1.1 实施采用 **A + A + C + A + A**（主色薄荷、右侧 Hero 3D、只本
 |---|---|
 | `npm run build`（真实 origin） | 20 条静态路由；postbuild `check-out` 12 页全绿 |
 | `npm run csp && npm run verify:csp` | 17 HTML / **20** hash（新增场景控件与滚动监听的客户端脚本） |
-| `npm run test:content` | **10/10**（新增合规文案、benchmark id 引用与组件硬编码数字扫描） |
+| `npm run test:content` | **11/11**（新增合规文案、benchmark id 引用与组件硬编码数字扫描） |
 | `npm run verify:site` | 14 路由，axe 0，reduced/no-WebGL = static |
-| `npm run test:e2e` | **18/18**（新增：场景按钮选择与说明同步、static 保留控件、静止 1s 内新增帧 ≤ 1） |
+| `npm run test:e2e` | **19/19**（新增：场景按钮选择与说明同步、static 保留控件、静止 1s 内新增帧 ≤ 1） |
 | Lighthouse 桌面 | 100/100/100/100；LCP 0.4s/0.3s、CLS 0、TBT 0ms |
-| 包体 | 初始 JS 232,745 B（227.2 KB）、3D chunk 241,853 B（236.2 KB）（≤ 250/260 KB） |
+| 包体 | 初始 JS 233,186 B（227.7 KB）、3D chunk 241,853 B（236.2 KB）（≤ 250/260 KB） |
 | `npm audit --omit=dev` | 0 漏洞 |
+
+
+### 16.9 独立审查与修复（2026-11-08，第三轮）
+
+独立只读审查（不继承实现结论）对 `74c72db..928ab6a` 逐文件复核，报出 3 个 Critical 与 7 个 Should-fix；逐条核实后全部成立。
+
+| 发现 | 原状 | 修复 |
+|---|---|---|
+| `idle 3D` E2E 恒真 | 重构时删掉了生产端 `__sceneFrames` 埋点，测试读到的永远是 0；改回 `frameloop="always"` 也能通过 | 恢复埋点；断言改为「指针移动必须产生帧、静止 1s 内新增帧 ≤ 1」，并先主动移动指针 |
+| 320/360px 控件被说明卡遮挡 | `.scene__footer` 重构后 `.scene__panel` 仍是 `position:absolute; bottom:64px`，窄屏 5 个按钮折成两行时被盖住 | panel 改为 footer 内静态布局；窄屏 footer 排到画布下方；新增 360px 逐按钮 `elementFromPoint` + 点击断言 |
+| `frameloop="demand"` 指针视差失效 | R3F 不会因 pointermove 自动调度帧，没有对象的 pointer handler | canvas 上显式 `pointermove`/`pointerleave` → `invalidate()`；离开回正 |
+| 场景标签数值错误 | `shortValue` 丢 `valueMax` 且直接输出枚举（`463bytes`、`72mb`） | 与说明卡同一套格式化（`463B`、`6–8 s`） |
+| 站点版本漂移 | 仓库已 6.3.1/6.3.2，站点 changelog 仍写 6.3.0 | 同步；`test:content` 断言 changelog 首项 = `facts.version` |
+| 测试数漂移 | `benchmarks.ts` 写 971，`facts.json` 是 1030 | 同步为 1030；`test:content` 断言 `tests.python` = `facts.python_tests` |
+| 门禁自测未接 CI | `gates.selftest.mjs` 自称「CI 里跑一步」，实际没有任何 workflow 调用 | 接入 `ci.yml` |
+| `importorskip` 依赖不全 | `arkose` 缺 Pillow、`recaptcha` 的 onnx_classifier 同样 | 补全 |
+| 裸导入检查可绕过 | 只扫 `tree.body`，放进 `try:` 就跳过 | 改用 `ast.walk` |
+| 覆盖率命令不一致 | README/policy/门禁提示仍写 `--cov=captchas`，CI 已实证模块形式会被静默忽略 | 统一为 `--cov=captchas/` |
+| 占位符边界 | `localhost.`、`127.0.0.2`、`[::1]` 漏检 | 放宽为 `localhost.?`、`127\.\d+\.\d+\.\d+`、`[::1]` |
+
+修复后复验：site e2e **19/19**、content **11/11**、verify:site axe 0、Lighthouse 桌面 **100/100/100/100**、Python **1023 passed / 7 skipped**、门禁自测 **18/18**。
+
 
 ---
 

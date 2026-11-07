@@ -1,7 +1,7 @@
 {
   "measuredAt": "2026-11-08",
   "method": "walk out/_next/static; zlib.gzipSync(level=9); the chunk whose source contains WebGLRenderer is counted as the 3D chunk, everything else as initial JS",
-  "initialJsGzipBytes": 232745,
+  "initialJsGzipBytes": 233186,
   "cssGzipBytes": 5438,
   "threeChunkGzipBytes": 241853,
   "initialJsFiles": 17,
