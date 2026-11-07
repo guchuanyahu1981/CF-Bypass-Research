@@ -1,0 +1,55 @@
+{
+  "task_id": "RELEASE-6.3.1",
+  "status": "done",
+  "timestamp": "2026-11-08T05:20:00+08:00",
+  "baseline_commit": "74c72db",
+  "goal": "把公开站/UI 收口与 captchas 覆盖率门禁交付到 master，CI 全绿后发布 v6.3.1。",
+  "commands_executed": [
+    { "cmd": "git push origin master", "exit_code": 0, "note": "74c72db..2aa3c08 (no force)" },
+    { "cmd": "gh run watch 42413189802 --exit-status (site-ci)", "exit_code": 0, "note": "Lint/Typecheck/Build/CSP/Content/Browser/Lighthouse green" },
+    { "cmd": "gh run watch 42414866642 --exit-status (ci)", "exit_code": 0, "note": "go / findings / python 3.11 / python 3.12 green" },
+    { "cmd": "git tag -a v6.3.1 && git push origin v6.3.1", "exit_code": 0, "note": "annotated tag pushed" },
+    { "cmd": "gh release create v6.3.1 --notes-file", "exit_code": 0, "note": "https://github.com/lza6/CF-Bypass-Research/releases/tag/v6.3.1" },
+    { "cmd": "python /tmp/loadtest.py (local static site)", "exit_code": 0, "note": "1/10/50 concurrency, 0 errors, 185-482 QPS" }
+  ],
+  "files_changed": [
+    "CHANGELOG.md (6.3.1 entry)",
+    "docs/facts.json version 6.3.1",
+    "docs/openapi.json version 6.3.1",
+    "Dockerfile image tag 6.3.1",
+    "docker-compose.yml image tag 6.3.1",
+    ".github/workflows/ci.yml (--cov=captchas/ path form)",
+    "requirements-dev.txt (pytest-cov/hypothesis/ruff restored + captchas optional deps)",
+    "tests/test_captchas_offline.py (importorskip for cv2/PIL/onnxruntime)",
+    "scripts/check-coverage.mjs (diagnostic on empty scope)",
+    "workflow_status.md",
+    "evidence/RELEASE-6.3.1.json"
+  ],
+  "ci_failures_found_and_fixed": [
+    "updatedAt 2026-11-08 judged as future date on UTC runner",
+    "11 captchas offline tests failed on CI without cv2/PIL/onnxruntime",
+    "requirements-dev lost pytest-cov/hypothesis/ruff during the dependency insertion",
+    "--cov=captchas (module form) silently ignored on CI; coverage report had only 24 solver keys"
+  ],
+  "load_test": {
+    "target": "http://127.0.0.1:3100/ (python -m http.server serving site/out)",
+    "environment": "Windows local, not production",
+    "runs": [
+      { "concurrency": 1, "requests": 30, "qps": 185.5, "p50_ms": 1.0, "p95_ms": 25.1, "p99_ms": 61.1, "errors": 0 },
+      { "concurrency": 10, "requests": 200, "qps": 364.7, "p50_ms": 4.2, "p95_ms": 8.3, "p99_ms": 508.9, "errors": 0 },
+      { "concurrency": 50, "requests": 500, "qps": 482.2, "p50_ms": 5.1, "p95_ms": 515.2, "p99_ms": 1016.2, "errors": 0 }
+    ]
+  },
+  "deployment": {
+    "status": "blocked",
+    "reason": "No domain and no Cloudflare Pages / GitHub Pages authorization; the user explicitly chose local-only.",
+    "rollback_plan": "Static deploy rolls back by replacing out/ with the previous release artifact; no database, no state, no migration."
+  },
+  "limitations": [
+    "Deployment not performed: missing domain/hosting credentials by prior user decision.",
+    "Real hosting headers (_headers, HSTS, frame-ancestors) unverified.",
+    "Real low-end device FPS not measured.",
+    "Mobile Lighthouse figures remain 2026-11-06.",
+    "9 high npm advisories remain in the dev-only @lhci/cli chain."
+  ]
+}

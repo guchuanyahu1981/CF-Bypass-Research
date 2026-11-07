@@ -1421,3 +1421,40 @@ R-E2E-1 4 次 → R-E2E-2 6 次 → R-E2E-3 2 次 = 本轮共 **12 次**；累�
 
 - 部署：无域名、无 Pages token，按用户早先选择停在本地；真实托管头未验证。
 - 真机低端设备、搜索量、英文母语审校未做。
+
+### 提交、CI 与发行版（2026-11-08）
+
+| 项 | 值 |
+|---|---|
+| 提交 | `93eeebc` feat(site) / `fa5615c` chore(release) / 4 个 CI 修复提交 |
+| 推送 | `origin/master`（`74c72db..2aa3c08`） |
+| CI | `site-ci` 42413189802 全绿；`ci` 42414866642 全绿（go / findings / python 3.11 / python 3.12） |
+| Tag | `v6.3.1` |
+| Release | https://github.com/lza6/CF-Bypass-Research/releases/tag/v6.3.1 |
+
+CI 修复链（每个都是真实失败，不是跳过）：
+
+1. `updatedAt` 在 UTC runner 被判定为未来日期 → 允许作者本地时区领先 UTC 1 天。
+2. captchas 离线测试缺 `cv2`/`PIL`/`onnxruntime` → 受影响用例 `importorskip`，并把四个依赖加入 `requirements-dev.txt`。
+3. 插入依赖时误删了 `pytest-cov`/`hypothesis`/`ruff` → 恢复。
+4. `--cov=captchas`（模块名）在 CI 被 pytest-cov 静默忽略，报告里只有 24 个 solver 键 → 改用路径形式 `--cov=captchas/`。
+
+### 压测（本地静态站，2026-11-08）
+
+目标：`http://127.0.0.1:3100/`（`python -m http.server` 服务 `site/out`），Windows 本机，非生产环境。
+
+| 并发 | 请求数 | QPS | P50 | P95 | P99 | 错误 |
+|---|---|---|---|---|---|---|
+| 1 | 30 | 185.5 | 1.0 ms | 25.1 ms | 61.1 ms | 0 |
+| 10 | 200 | 364.7 | 4.2 ms | 8.3 ms | 508.9 ms | 0 |
+| 50 | 500 | 482.2 | 5.1 ms | 515.2 ms | 1016.2 ms | 0 |
+
+读法：`http.server` 是单进程文件服务，长尾来自队列排队，不是页面问题。真实部署是静态托管 + CDN，
+这份数据只作为"产物可被高并发读取、无错误"的下限证据。
+
+### 部署（阻塞，如实）
+
+未部署。原因：没有域名、没有 Cloudflare Pages / GitHub Pages 的授权与 token；
+用户早先明确选择"只本地"。按停止条件，缺不可替代凭证时标记阻塞，不假装已上线。
+
+回滚方案（若将来部署）：静态站回滚 = 用上一个 release 的 `out/` 产物整体替换，无数据库、无状态、无迁移。
