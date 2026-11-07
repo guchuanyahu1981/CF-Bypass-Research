@@ -1,3 +1,40 @@
+## [6.3.1] - 2026-11-08
+
+主题：**公开站从"能读"变成"可核对"，并把文档里声称的东西补齐。**
+
+### 公开站（`site/`）
+
+- 3D 场景可操作：3 个挑战面板 / 5 个流水线节点各有 44×44 DOM 按钮，`aria-pressed` 选中，
+  说明卡显示实测值与条件；`Backend` 展开 cfsolve → pydoll → Camoufox → FlareSolverr。
+- 移除凭证几何体的自动旋转；`frameloop="demand"`，指针视差收敛后停止渲染
+  （E2E 断言静止 1s 内新增帧 ≤ 1）。
+- 首页新增「实测数据摘要」4 行与 `/benchmarks/` 链接；Hero 三个数字改为引用
+  `benchmarks.ts` 的 id，不再手写一份。
+- 导航栏滚动超过 24px 才加背景与 blur。
+- 构建期门禁：`check-env.mjs` 拒绝缺失/占位的 `NEXT_PUBLIC_SITE_URL`；
+  `check-out.mjs` 断言 12 页 canonical/hreflang、sitemap、robots、JSON-LD、OG、占位残留。
+- OG 图固化为稳定的 `/og/{zh,en}.png`；12 个可索引页全部带 `og:image`（此前只有 2 页）。
+- 本地预览构建（`SITE_ALLOW_PLACEHOLDER=1`）在页脚渲染提示。
+- 新增 `test:e2e` 18 项：运行时错误、键盘焦点环、reduced-motion、场景控件、
+  static 降级保留控件、静止无自动旋转、CLS。
+
+### 现有两页（`/`、`/console`）
+
+- 内联 base64 SVG favicon；真实 Chrome 不再请求 `/favicon.ico` 得到 404
+  （UI E2E 从 31/35 回到 35/35）。
+- 单测 34 → 36（favicon 内联断言）。
+
+### 工程
+
+- `tests/test_detect_source.py` 的子进程输出改为 UTF-8 解码：Windows 默认 GBK 会让读取线程
+  崩溃、`stdout` 变 `None`，3 个测试失败。
+- `scripts/verify_ui_e2e.py` 支持 `CHROME_PATH`，Playwright 自带浏览器缺失时可用系统 Chrome。
+
+### 文档
+
+- 《视觉交互与可发现性设计指南 V1》新增 §16.7/§16.8：文件路径、`<details>` 菜单、FAQ 5 条、
+  代码块并排、动效实现状态、字体系统栈、证据落点全部改为实际口径。
+
 ## [6.3.0] - 2026-11-05
 
 主题：**补上两条断链 —— "出口到底是谁"和"挑战页到底在干什么"**。

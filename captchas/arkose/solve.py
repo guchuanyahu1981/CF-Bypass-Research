@@ -25,7 +25,7 @@ import urllib.parse
 
 from cloakbrowser import launch_async
 
-from arkose.predict import predict as onnx_predict, cryptojs_encrypt
+from captchas.arkose.predict import predict as onnx_predict, cryptojs_encrypt
 
 log = logging.getLogger("arkose")
 

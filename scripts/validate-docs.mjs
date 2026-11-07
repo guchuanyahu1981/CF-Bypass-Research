@@ -28,7 +28,11 @@ import { execFileSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const HERE = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+//: `--root=<dir>` 让门禁可以对一棵**临时树**跑（scripts/gates.selftest.mjs 用）。
+//: 门禁自己也得能被测试 —— 否则规则写错时它只会安静地"通过"。
+const rootArg = process.argv.find((a) => a.startsWith("--root="));
+const ROOT = rootArg ? resolve(rootArg.slice("--root=".length)) : HERE;
 const FACTS_PATH = resolve(ROOT, "docs/facts.json");
 
 function argValue(name) {
@@ -117,7 +121,21 @@ function measure() {
     } else {
       try {
         const cov = JSON.parse(readFileSync(p, "utf8"));
-        const pct = cov?.totals?.percent_covered ?? cov?.totals?.percent_covered_display;
+        // v6.3：`--cov` 同时覆盖 solver/ 与 captchas/，`totals` 是两者混算的结果
+        // （会把 90% 的 solver 和 22% 的 captchas 平均成 64%）。文档里写的"Python 覆盖率"
+        // 一直指 solver/ 整体，所以这里按范围取子树，与 check-coverage.mjs 的口径一致。
+        let covered = 0;
+        let statements = 0;
+        for (const [file, info] of Object.entries(cov?.files ?? {})) {
+          const path = String(file).split("\\").join("/");
+          if (!path.startsWith("solver/")) continue;
+          const summary = info?.summary ?? {};
+          covered += Number(summary.covered_lines ?? 0);
+          statements += Number(summary.num_statements ?? 0);
+        }
+        const pct = statements
+          ? (covered / statements) * 100
+          : (cov?.totals?.percent_covered ?? cov?.totals?.percent_covered_display);
         if (pct === undefined) problem("measure", `${COVERAGE_JSON} 里没有 totals.percent_covered`);
         else measured.python_coverage_percent = Math.round(Number(pct));
       } catch (e) {

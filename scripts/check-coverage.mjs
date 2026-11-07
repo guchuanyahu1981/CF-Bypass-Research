@@ -8,16 +8,22 @@
  * 而那块盲区里当场就藏着真缺陷（bootstrap.py 引用了未导入的 SolveError，
  * 让文档承诺的"缺依赖 → 友好提示 + exit 2"变成 NameError 裸 traceback）。
  *
- * 规则（三条，刻意严格）：
- *   1. 报告里出现的每个 solver/ 模块都必须在策略里登记阈值；
+ * v6.3 起扫描范围从 `solver/` 扩到 `solver/` + `captchas/`：
+ * 嫁接层有 5,006 行、40 个文件、11 个厂商求解器，此前完全在门禁之外（实测覆盖率 2%）。
+ * 边界外的代码不会因为"没人测"就不出问题。
+ *
+ * 规则（四条，刻意严格）：
+ *   1. 报告里出现的每个 solver/ 或 captchas/ 模块都必须在策略里登记阈值；
  *      **未登记 ≠ 无门槛**，未登记直接报错（逼新增模块的人想清楚它该多少）。
  *   2. 策略里登记的每个模块都必须真的出现在报告里（文件改名/删除后忘了更新策略也是错）。
  *   3. 实测值不得低于登记的 min。带 `waiver` 的模块照样受 min 约束（防继续腐烂），
  *      只是额外打印豁免理由。
+ *   4. 每个扫描范围的**整体**覆盖率也必须达到 `_scopes` 里登记的门槛
+ *      （`solver/ ≥80` 是原来 `--cov-fail-under=80` 的等价物，只是按范围分开算）。
  *
  * 零依赖、不联网。
  * 用法：
- *   python -m pytest tests/ -q --cov=solver --cov-report=json:coverage.json
+ *   python -m pytest tests/ -q --cov=solver --cov=captchas --cov-report=json:coverage.json
  *   node scripts/check-coverage.mjs [--coverage-json=coverage.json] [--policy=docs/coverage-policy.json]
  */
 
@@ -26,6 +32,9 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+
+//: 覆盖率门禁扫描的范围。新增顶层包时在这里加，并同步 docs/coverage-policy.json 的 _scopes。
+const SCOPES = ["solver/", "captchas/"];
 
 function argValue(name, fallback) {
   const hit = process.argv.find((a) => a.startsWith(`${name}=`));
@@ -45,7 +54,7 @@ function norm(p) {
 function main() {
   if (!existsSync(COV_PATH)) {
     console.error(`找不到覆盖率报告 ${COV_PATH}`);
-    console.error("先跑：python -m pytest tests/ -q --cov=solver --cov-report=json:coverage.json");
+    console.error("先跑：python -m pytest tests/ -q --cov=solver --cov=captchas --cov-report=json:coverage.json");
     process.exit(2);
   }
   if (!existsSync(POLICY_PATH)) {
@@ -82,13 +91,20 @@ function main() {
     process.exit(2);
   }
 
+  const scopeTotals = {};
   const seen = new Set();
   for (const [rawPath, info] of Object.entries(files)) {
     const path = norm(rawPath);
-    if (!path.startsWith("solver/")) continue; // 只对 solver 包设门槛
+    const scope = SCOPES.find((s) => path.startsWith(s));
+    if (!scope) continue; // 只对登记过的范围设门槛
     seen.add(path);
 
-    const pct = Number(info?.summary?.percent_covered ?? NaN);
+    const summary = info?.summary ?? {};
+    const acc = (scopeTotals[scope] ??= { covered: 0, statements: 0 });
+    acc.covered += Number(summary.covered_lines ?? 0);
+    acc.statements += Number(summary.num_statements ?? 0);
+
+    const pct = Number(summary.percent_covered ?? NaN);
     const rule = modules[path];
 
     if (!rule) {
@@ -137,8 +153,27 @@ function main() {
     }
   }
 
-  const total = cov?.totals?.percent_covered;
-  if (total !== undefined) console.log(`\nsolver/ 整体：${Number(total).toFixed(2)}%`);
+  // 整体门槛按范围分开算：solver/ 与 captchas/ 的基线差得远，混算会把 90% 和 22%
+  // 平均成一个谁都不代表的数字，两边都失去信号。
+  const scopes = policy?._scopes ?? {};
+  console.log("");
+  for (const scope of SCOPES) {
+    const acc = scopeTotals[scope];
+    const rule = scopes[scope];
+    if (!acc) {
+      problems.push(`${scope}: 覆盖率报告里没有任何该范围的模块（范围写错或 --cov 没带上？）`);
+      continue;
+    }
+    if (!rule) {
+      problems.push(`${scope}: 未在 docs/coverage-policy.json 的 _scopes 登记整体门槛`);
+      continue;
+    }
+    const pct = acc.statements ? (acc.covered / acc.statements) * 100 : 100;
+    const min = Number(rule.min);
+    const ok = pct >= min;
+    console.log(`${scope} 整体：${pct.toFixed(2)}%（门禁 ${min}%）${ok ? "" : " ← 低于门禁"}`);
+    if (!ok) problems.push(`${scope}: 整体 ${pct.toFixed(2)}% 低于门禁 ${min}%`);
+  }
 
   if (problems.length === 0) {
     console.log(`✅ ${rows.length} 个模块全部达到各自门禁`);

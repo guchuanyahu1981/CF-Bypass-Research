@@ -286,7 +286,7 @@ scripts/
   probe_camoufox.py     # Camoufox 过盾实验
   diag_challenge.py     # 挑战页 DOM 诊断：iframe / checkbox / 按钮 / 截图
 captchas/               # 万盾求解器副本（11 厂商；自包含，不追上游，见 captchas/README.md）
-tests/                  # 971 项 Python 测试（注入假浏览器/假后端，离线）
+tests/                  # 1030 项 Python 测试（注入假浏览器/假后端，离线）
 docs/
   项目规格.md            # ★ 单一事实源：是什么/边界/承诺什么/不承诺什么
   API.md                # ★ 接口契约（参数/响应/错误码表）
@@ -375,7 +375,8 @@ cl, err := pool.Get(ctx, target)      // 同域永远打到同一个 worker
 
 ```bash
 python -m pytest tests/ -q                      # Python 侧（注入假浏览器）
-python -m pytest tests/ -q --cov=solver --cov-fail-under=80   # 带覆盖率门槛
+python -m pytest tests/ -q --cov=solver --cov=captchas --cov-report=json:coverage.json  # 带覆盖率（门禁在下一步）
+node scripts/check-coverage.mjs                 # 逐模块 + 分范围（solver ≥80 / captchas ≥20）
 cd gocfsolve && go vet ./... && go test -race ./...           # Go 侧（httptest + 竞态检测）
 node scripts/validate-findings.mjs              # 校验研究结论的证据链
 python scripts/capture_sample.py --url https://<target>/ --out samples/x        # 试运行（不联网）

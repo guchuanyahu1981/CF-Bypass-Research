@@ -4,7 +4,7 @@ Exercises _parse_dd_cookie against the real api-js.datadome.co response shape
 ({"status":200,"cookie":"datadome=...; Max-Age=...; Domain=.github.com; ..."}) —
 no network.
 """
-from datadome.solve import _parse_dd_cookie
+from captchas.datadome.solve import _parse_dd_cookie
 
 _OK = ('{"status":200,"cookie":"datadome=hd4Wnz4AH6C2Vx3czLr47hzd~qNJutXMMt4; '
        'Max-Age=31536000; Domain=.github.com; Path=/; Secure; SameSite=None"}')

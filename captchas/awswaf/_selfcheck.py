@@ -1,5 +1,5 @@
 """Offline runnable check for the cookie/block logic: python -m awswaf._selfcheck"""
-from awswaf.solve import _waf_token, _title_is_block
+from captchas.awswaf.solve import _waf_token, _title_is_block
 
 if __name__ == "__main__":
     assert _waf_token([{"name": "aws-waf-token", "value": "abc", "domain": ".ex.com"}])["value"] == "abc"

@@ -530,10 +530,10 @@ def test_registry_runs_mc_task(monkeypatch, tmp_path):
 
     # 用假模块替掉 hcaptcha 求解器（无需 cloakbrowser）
     import types as _types
-    mod = _types.ModuleType("hcaptcha.solve")
+    mod = _types.ModuleType("captchas.hcaptcha.solve")
     mod.solve_hcaptcha = fake
     mod.solve_hcaptcha_invisible = fake
-    monkeypatch.setitem(__import__("sys").modules, "hcaptcha.solve", mod)
+    monkeypatch.setitem(__import__("sys").modules, "captchas.hcaptcha.solve", mod)
     monkeypatch.setattr(mc, "_TIMEOUT_GRACE", 5.0)
 
     class _S:
@@ -613,10 +613,10 @@ def test_mc_timeout_maps_to_ecosystem_code(monkeypatch):
         raise SolveError(ErrorCode.NOT_CONFIGURED, "缺 cloakbrowser", stage="admit")
 
     import types as _types
-    mod = _types.ModuleType("hcaptcha.solve")
+    mod = _types.ModuleType("captchas.hcaptcha.solve")
     mod.solve_hcaptcha = boom
     mod.solve_hcaptcha_invisible = boom
-    monkeypatch.setitem(__import__("sys").modules, "hcaptcha.solve", mod)
+    monkeypatch.setitem(__import__("sys").modules, "captchas.hcaptcha.solve", mod)
     monkeypatch.setattr(mc, "_TIMEOUT_GRACE", 3.0)
 
     class _S:
@@ -651,9 +651,9 @@ def test_mc_path_uses_sticky_egress(monkeypatch):
         seen["proxy"] = k.get("proxy") or ""
         return {"success": True, "user_agent": "UA"}
 
-    mod = _types.ModuleType("datadome.solve")
+    mod = _types.ModuleType("captchas.datadome.solve")
     mod.solve_datadome = fake
-    monkeypatch.setitem(__import__("sys").modules, "datadome.solve", mod)
+    monkeypatch.setitem(__import__("sys").modules, "captchas.datadome.solve", mod)
     monkeypatch.setattr(mc, "_TIMEOUT_GRACE", 3.0)
 
     class _Entry:
@@ -681,10 +681,10 @@ def test_mc_path_tolerates_egress_lookup_failure(monkeypatch):
     async def fake(*a, **k):
         return {"token": "T"}
 
-    mod = _types.ModuleType("hcaptcha.solve")
+    mod = _types.ModuleType("captchas.hcaptcha.solve")
     mod.solve_hcaptcha = fake
     mod.solve_hcaptcha_invisible = fake
-    monkeypatch.setitem(__import__("sys").modules, "hcaptcha.solve", mod)
+    monkeypatch.setitem(__import__("sys").modules, "captchas.hcaptcha.solve", mod)
     monkeypatch.setattr(mc, "_TIMEOUT_GRACE", 3.0)
 
     class _S:

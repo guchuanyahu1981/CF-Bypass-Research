@@ -34,10 +34,10 @@ except ImportError:
 
 log = logging.getLogger("multicaptcha")
 
-#: captchas/ 子包根目录（solve.py 以 cwd/import-path 方式依赖包内相对导入，
-#: aliyun 还要求以子进程方式在包根目录跑——见 server.py 的实证注释）
+#: 仓库根。`captchas` 是正规包（一律 `captchas.*` 绝对导入），所以只需要仓库根
+#: 在 path 上。**不要**再把 `captchas/` 自己塞进去：同一模块会以两个名字各导入
+#: 一份，模块级的 `_solve_lock` / KeyPool 会各有一把，串行保护形同虚设。
 _REPO_ROOT = Path(__file__).resolve().parent.parent
-_CAPTCHAS_ROOT = _REPO_ROOT / "captchas"
 
 #: 扩展求解类型 → captchas 子模块。**刻意避开**主链路 want 名：
 #: 主链路已占 turnstile / recaptcha_v3 / clearance / awswaf；
@@ -151,14 +151,12 @@ async def solve_async(body: dict, timeout_s: float = 0) -> dict:
     """分发到 captchas/ 对应求解器并归一结果。同类型串行，跨类型并行。"""
     type_ = (body.get("type") or body.get("want") or "").strip().lower()
     module = CAPTCHA_TYPES[type_]
-    # 求解器内部用 `from captchas.common.x import ...`（绝对包名），同时各自以顶层
-    # 包名 `turnstile.solve` / `aliyun.solve` 被导入 —— 两个根都要在 path 上：
-    #   · _REPO_ROOT  → `captchas.common` 可解析
-    #   · _CAPTCHAS_ROOT → `turnstile` / `aliyun` 等顶层包名可解析
+    # 求解器一律以 `captchas.<vendor>.solve` 导入（与 `captchas/README.md` 的约定一致）。
+    # 脚本模式（`python solver/service.py`）的 sys.path[0] 是 `solver/`，仓库根不在
+    # 里面，所以这一次插入仍然必要。
     with _locks_guard:      # 复用同一把守卫：都是"一次性全局副作用"
-        for _p in (str(_CAPTCHAS_ROOT), str(_REPO_ROOT)):
-            if _p not in sys.path:
-                sys.path.insert(0, _p)
+        if str(_REPO_ROOT) not in sys.path:
+            sys.path.insert(0, str(_REPO_ROOT))
     deadline = timeout_s or body.get("timeout_s") or _DEFAULT_TIMEOUTS.get(type_, 60)
     proxy = body.get("proxy") or ""
     url = body.get("url") or ""
@@ -215,12 +213,12 @@ async def _dispatch(module, type_, body, url, sitekey, proxy, deadline) -> dict:
     action = body.get("action")
 
     if type_ == "turnstile_x":
-        from turnstile.solve import solve_turnstile
+        from captchas.turnstile.solve import solve_turnstile
         r = await solve_turnstile(sitekey, url, action, body.get("cdata"), proxy=proxy)
         return _normalize(type_, r, time.monotonic() - _t0_of(body))
 
     if type_ == "hcaptcha":
-        from hcaptcha.solve import solve_hcaptcha, solve_hcaptcha_invisible
+        from captchas.hcaptcha.solve import solve_hcaptcha, solve_hcaptcha_invisible
         if action == "invisible":
             r = await solve_hcaptcha_invisible(sitekey, url, proxy=proxy)
         else:
@@ -228,36 +226,36 @@ async def _dispatch(module, type_, body, url, sitekey, proxy, deadline) -> dict:
         return _normalize(type_, r, time.monotonic() - _t0_of(body))
 
     if type_ == "cloudflare_x":
-        from cloudflare.solve import solve_cf_clearance
+        from captchas.cloudflare.solve import solve_cf_clearance
         r = await solve_cf_clearance(url, proxy, deadline, pre, post)
         return _normalize(type_, r, time.monotonic() - _t0_of(body))
 
     if type_ == "awswaf_x":
-        from awswaf.solve import solve_aws_waf
+        from captchas.awswaf.solve import solve_aws_waf
         r = await solve_aws_waf(url, proxy, deadline, pre, post)
         return _normalize(type_, r, time.monotonic() - _t0_of(body))
 
     if type_ == "botguard":
-        from botguard.solve import solve_botguard
+        from captchas.botguard.solve import solve_botguard
         r = await solve_botguard(url=url, email=body.get("email"),
                                  password=body.get("password"), proxy=proxy,
                                  timeout_s=deadline, pre_actions=pre)
         return _normalize(type_, r, time.monotonic() - _t0_of(body))
 
     if type_ == "datadome":
-        from datadome.solve import solve_datadome
+        from captchas.datadome.solve import solve_datadome
         r = await solve_datadome(url=url, referer=body.get("referer"),
                                  proxy=proxy, timeout_s=deadline)
         return _normalize(type_, r, time.monotonic() - _t0_of(body))
 
     if type_ == "perimeterx":
-        from perimeterx.solve import solve_perimeterx
+        from captchas.perimeterx.solve import solve_perimeterx
         r = await solve_perimeterx(url=url, render_flow=body.get("render_flow") or "outlook_signup",
                                    proxy=proxy, timeout_s=deadline)
         return _normalize(type_, r, time.monotonic() - _t0_of(body))
 
     if type_ == "akamai":
-        from akamai.solve import solve_akamai
+        from captchas.akamai.solve import solve_akamai
         r = await solve_akamai(url, proxy, deadline, pre, post)
         return _normalize(type_, r, time.monotonic() - _t0_of(body))
 
@@ -266,10 +264,10 @@ async def _dispatch(module, type_, body, url, sitekey, proxy, deadline) -> dict:
         # （asyncio.to_thread 也失败）。保留该模式（见 captchas/aliyun/）。
         import json as _json
         proc = await asyncio.create_subprocess_exec(
-            sys.executable, "-m", "aliyun._run",
+            sys.executable, "-m", "captchas.aliyun._run",
             body.get("scene_id") or "", body.get("prefix") or "",
             body.get("region") or "sgp", str(deadline), proxy,
-            cwd=str(_CAPTCHAS_ROOT),
+            cwd=str(_REPO_ROOT),
             env=_subprocess_env(),
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
         try:
@@ -286,14 +284,14 @@ async def _dispatch(module, type_, body, url, sitekey, proxy, deadline) -> dict:
         return _normalize(type_, r, time.monotonic() - _t0_of(body))
 
     if type_ == "arkose":
-        from arkose.solve import solve_arkose
+        from captchas.arkose.solve import solve_arkose
         r = await solve_arkose(public_key=body.get("public_key") or "",
                                page_url=url, game_type=body.get("game_type") or "4",
                                proxy=proxy, timeout_s=deadline, pre_actions=pre)
         return _normalize(type_, r, time.monotonic() - _t0_of(body))
 
     # recaptcha_x：v2/v3/invisible × real_page
-    from recaptcha.solve import (
+    from captchas.recaptcha.solve import (
         solve_recaptcha_v3, solve_recaptcha_v3_realpage, solve_recaptcha_invisible,
         solve_recaptcha_invisible_realpage, solve_recaptcha_v2, solve_recaptcha_v2_realpage,
     )
@@ -330,9 +328,9 @@ async def _dispatch(module, type_, body, url, sitekey, proxy, deadline) -> dict:
 
 
 def _subprocess_env() -> dict:
-    """子进程环境：PYTHONPATH 同时含 captchas/ 与仓库根（包内绝对 import 需要）。"""
+    """子进程环境：PYTHONPATH 含仓库根（`captchas` 包的绝对导入需要）。"""
     env = dict(os.environ)
-    parts = [str(_CAPTCHAS_ROOT), str(_REPO_ROOT)]
+    parts = [str(_REPO_ROOT)]
     old = env.get("PYTHONPATH")
     if old:
         parts.append(old)

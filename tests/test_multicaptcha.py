@@ -201,21 +201,21 @@ def _run(coro):
     ("type_", "body", "modname", "fname", "ret"),
     [
         ("turnstile_x", {"sitekey": "sk", "url": "https://a.test/"},
-         "turnstile.solve", "solve_turnstile", {"token": "tok", "method": "route"}),
+         "captchas.turnstile.solve", "solve_turnstile", {"token": "tok", "method": "route"}),
         ("hcaptcha", {"sitekey": "sk", "url": "https://a.test/"},
-         "hcaptcha.solve", "solve_hcaptcha", {"token": "tok"}),
+         "captchas.hcaptcha.solve", "solve_hcaptcha", {"token": "tok"}),
         ("cloudflare_x", {"url": "https://a.test/"},
-         "cloudflare.solve", "solve_cf_clearance", {"cf_clearance": "abc", "success": True}),
+         "captchas.cloudflare.solve", "solve_cf_clearance", {"cf_clearance": "abc", "success": True}),
         ("awswaf_x", {"url": "https://a.test/"},
-         "awswaf.solve", "solve_aws_waf", {"success": True, "token": "awt"}),
+         "captchas.awswaf.solve", "solve_aws_waf", {"success": True, "token": "awt"}),
         ("datadome", {"url": "https://a.test/"},
-         "datadome.solve", "solve_datadome", {"success": True}),
+         "captchas.datadome.solve", "solve_datadome", {"success": True}),
         ("perimeterx", {"url": "https://a.test/"},
-         "perimeterx.solve", "solve_perimeterx", {"success": True}),
+         "captchas.perimeterx.solve", "solve_perimeterx", {"success": True}),
         ("akamai", {"url": "https://a.test/"},
-         "akamai.solve", "solve_akamai", {"success": True}),
+         "captchas.akamai.solve", "solve_akamai", {"success": True}),
         ("recaptcha_x", {"version": "v2", "sitekey": "sk", "url": "https://a.test/"},
-         "recaptcha.solve", "solve_recaptcha_v2", {"token": "rc"}),
+         "captchas.recaptcha.solve", "solve_recaptcha_v2", {"token": "rc"}),
     ],
 )
 def test_dispatch_routes_to_right_solver(monkeypatch, type_, body, modname, fname, ret):
@@ -227,8 +227,8 @@ def test_dispatch_routes_to_right_solver(monkeypatch, type_, body, modname, fnam
         return dict(ret)
 
     _EXTRA = {
-        "hcaptcha.solve": ["solve_hcaptcha", "solve_hcaptcha_invisible"],
-        "recaptcha.solve": [
+        "captchas.hcaptcha.solve": ["solve_hcaptcha", "solve_hcaptcha_invisible"],
+        "captchas.recaptcha.solve": [
             "solve_recaptcha_v3", "solve_recaptcha_v3_realpage",
             "solve_recaptcha_invisible", "solve_recaptcha_invisible_realpage",
             "solve_recaptcha_v2", "solve_recaptcha_v2_realpage",
@@ -247,7 +247,7 @@ def test_dispatch_unknown_version_rejected(monkeypatch):
     async def fake(*a, **k):  # pragma: no cover - 不该被调用
         raise AssertionError("version 非法时不应调用求解器")
 
-    _install_fake(monkeypatch, "recaptcha.solve",
+    _install_fake(monkeypatch, "captchas.recaptcha.solve",
                   **{n: fake for n in ("solve_recaptcha_v3", "solve_recaptcha_v3_realpage",
                                        "solve_recaptcha_invisible", "solve_recaptcha_invisible_realpage",
                                        "solve_recaptcha_v2", "solve_recaptcha_v2_realpage")})
@@ -264,7 +264,7 @@ def test_dispatch_timeout_returns_unsolved(monkeypatch):
         return {"token": "never"}  # pragma: no cover
 
     monkeypatch.setattr(mc, "_TIMEOUT_GRACE", 0.3)
-    _install_fake(monkeypatch, "datadome.solve", solve_datadome=slow)
+    _install_fake(monkeypatch, "captchas.datadome.solve", solve_datadome=slow)
     out = _run(mc.solve_async({"type": "datadome", "url": "https://a.test/"}, timeout_s=1))
     assert out["solved"] is False and "timed out" in out["error"]
     assert out["ok"] is True
@@ -275,7 +275,7 @@ def test_dispatch_internal_error_wrapped(monkeypatch):
     async def boom(*a, **k):
         raise RuntimeError("cloak explodiu")
 
-    _install_fake(monkeypatch, "datadome.solve", solve_datadome=boom)
+    _install_fake(monkeypatch, "captchas.datadome.solve", solve_datadome=boom)
     with pytest.raises(SolveError) as ei:
         _run(mc.solve_async({"type": "datadome", "url": "https://a.test/"}, timeout_s=5))
     assert ei.value.code is ErrorCode.INTERNAL
@@ -286,7 +286,7 @@ def test_inflight_tracking_cleared_after_solve(monkeypatch):
     async def fake(*a, **k):
         return {"success": True}
 
-    _install_fake(monkeypatch, "datadome.solve", solve_datadome=fake)
+    _install_fake(monkeypatch, "captchas.datadome.solve", solve_datadome=fake)
     _run(mc.solve_async({"type": "datadome", "url": "https://a.test/"}, timeout_s=5))
     assert mc.inflight_tasks() == []
 
@@ -309,7 +309,7 @@ def test_aliyun_runs_in_subprocess(monkeypatch):
     monkeypatch.setattr(mc.asyncio, "create_subprocess_exec", fake_exec)
     out = _run(mc.solve_async({"type": "aliyun", "scene_id": "s", "prefix": "p",
                                "url": "https://a.test/"}, timeout_s=5))
-    assert calls["args"][1] == "-m" and calls["args"][2] == "aliyun._run"
+    assert calls["args"][1] == "-m" and calls["args"][2] == "captchas.aliyun._run"
     assert out["solved"] is True and out["token"] == "T001"
 
 
@@ -387,7 +387,7 @@ def test_http_solve_dispatches_to_multicaptcha(live_service, monkeypatch):
     async def fake(*a, **k):
         return {"success": True, "cookies": [{"name": "datadome", "value": "d"}]}
 
-    _install_fake(monkeypatch, "datadome.solve", solve_datadome=fake)
+    _install_fake(monkeypatch, "captchas.datadome.solve", solve_datadome=fake)
     status, body = _post(base, {"url": "https://example.com/", "want": "datadome"})
     assert status == 200 and body["solved"] is True
     assert body["routed_by"]["backend"] == "captchas"
@@ -402,7 +402,7 @@ def test_http_solve_multicaptcha_unsolved_still_200(live_service, monkeypatch):
     async def fake(*a, **k):
         return {"error": "gate not rendered"}
 
-    _install_fake(monkeypatch, "datadome.solve", solve_datadome=fake)
+    _install_fake(monkeypatch, "captchas.datadome.solve", solve_datadome=fake)
     status, body = _post(base, {"url": "https://example.com/", "want": "datadome"})
     assert status == 200 and body["solved"] is False
     assert body["error"] == "gate not rendered"
@@ -447,7 +447,7 @@ def test_missing_cloakbrowser_maps_to_not_configured(monkeypatch):
         return real_import(name, *a, **k)
 
     # 假模块在函数体内 import 一个不存在的依赖 → ImportError
-    mod = types.ModuleType("datadome.solve")
+    mod = types.ModuleType("captchas.datadome.solve")
 
     async def solve_datadome(*a, **k):  # pragma: no cover - 不会执行到
         raise AssertionError
@@ -456,7 +456,7 @@ def test_missing_cloakbrowser_maps_to_not_configured(monkeypatch):
         import cloakbrowser  # noqa: F401  (fake_import 会拦下)
 
     mod.solve_datadome = lambda *a, **k: module_level_import()  # 同步抛
-    monkeypatch.setitem(sys.modules, "datadome.solve", mod)
+    monkeypatch.setitem(sys.modules, "captchas.datadome.solve", mod)
     monkeypatch.setattr(builtins, "__import__", fake_import)
     try:
         with pytest.raises(SolveError) as ei:
@@ -474,7 +474,7 @@ def test_http_self_url_type_allows_missing_url(live_service, monkeypatch):
     async def fake(*a, **k):
         return {"success": True, "px3": "x"}
 
-    _install_fake(monkeypatch, "perimeterx.solve", solve_perimeterx=fake)
+    _install_fake(monkeypatch, "captchas.perimeterx.solve", solve_perimeterx=fake)
     status, body = _post(base, {"want": "perimeterx"})   # 无 url
     assert status == 200 and body["solved"] is True
 
@@ -486,7 +486,7 @@ def test_http_timeout_field_accepted(live_service, monkeypatch):
     async def fake(*a, **k):
         return {"token": "t"}
 
-    _install_fake(monkeypatch, "hcaptcha.solve",
+    _install_fake(monkeypatch, "captchas.hcaptcha.solve",
                   solve_hcaptcha=fake, solve_hcaptcha_invisible=fake)
     status, body = _post(base, {"url": "https://example.com/", "want": "hcaptcha",
                                 "sitekey": "sk", "timeout": 7})
@@ -507,7 +507,7 @@ def test_http_route_auto_dispatches_multicaptcha(live_service, monkeypatch):
     async def fake(*a, **k):
         return {"success": True}
 
-    _install_fake(monkeypatch, "datadome.solve", solve_datadome=fake)
+    _install_fake(monkeypatch, "captchas.datadome.solve", solve_datadome=fake)
     status, body = _post(base, {"url": "https://example.com/", "route": "auto"})
     assert status == 200 and body["solved"] is True
     assert body["routed_by"]["detail"]["multicaptcha_want"] == "datadome"
@@ -528,7 +528,7 @@ def test_same_type_concurrent_across_threads(monkeypatch):
         await asyncio.sleep(0.15)
         return {"success": True}
 
-    _install_fake(monkeypatch, "datadome.solve", solve_datadome=fake)
+    _install_fake(monkeypatch, "captchas.datadome.solve", solve_datadome=fake)
     results, errors = [], []
 
     def worker():
@@ -556,7 +556,7 @@ def test_lock_contention_reports_busy_not_hang(monkeypatch):
         await asyncio.sleep(5)
         return {"success": True}  # pragma: no cover
 
-    _install_fake(monkeypatch, "datadome.solve", solve_datadome=slow)
+    _install_fake(monkeypatch, "captchas.datadome.solve", solve_datadome=slow)
     monkeypatch.setattr(mc, "_TIMEOUT_GRACE", 0.0)
     lock = mc._lock_for("datadome")
     assert lock.acquire(blocking=False)
@@ -602,7 +602,7 @@ def test_http_bypass_uses_sticky_egress_proxy(live_service, monkeypatch):
         seen["proxy"] = k.get("proxy") or (a[-1] if a else "")
         return {"success": True}
 
-    _install_fake(monkeypatch, "datadome.solve", solve_datadome=fake)
+    _install_fake(monkeypatch, "captchas.datadome.solve", solve_datadome=fake)
     try:
         status, body = _post(base, {"url": "https://example.com/", "want": "datadome"})
     finally:
@@ -623,7 +623,7 @@ def test_http_explicit_proxy_not_overridden(live_service, monkeypatch):
         seen["proxy"] = k.get("proxy") or ""
         return {"success": True}
 
-    _install_fake(monkeypatch, "datadome.solve", solve_datadome=fake)
+    _install_fake(monkeypatch, "captchas.datadome.solve", solve_datadome=fake)
     try:
         status, _ = _post(base, {"url": "https://example.com/", "want": "datadome",
                                  "proxy": "http://mine:pw@1.2.3.4:8080"})

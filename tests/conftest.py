@@ -59,22 +59,34 @@ except ImportError:  # hypothesis 是 dev 依赖；没装时不阻塞普通单�
 
 @pytest.fixture(autouse=True)
 def _close_tracked_sqlite_stores(monkeypatch):
+    import sys as _sys
+
     from solver import cache as cache_mod
 
+    # 同一个文件可能以两个模块对象存在：包导入（`solver.cache`）与脚本模式
+    # （`sys.path` 插 `solver/` 后 `import cache`，test_cache_sqlite.py 就是这种）。
+    # 只钩前者的话，后者创建的连接永远不会被 close —— 那正是 2026-11-06 实测
+    # "带 --cov 跑出 45 条 unclosed database" 的来源。
+    modules = [cache_mod]
+    script_mod = _sys.modules.get("cache")
+    if script_mod is not None and script_mod is not cache_mod:
+        modules.append(script_mod)
+
     tracked: list[object] = []
-    for cls_name in ("SqliteStore", "FileStore"):
-        cls = getattr(cache_mod, cls_name, None)
-        if cls is None:
-            continue
-        orig_init = cls.__init__
+    for mod in modules:
+        for cls_name in ("SqliteStore", "FileStore"):
+            cls = getattr(mod, cls_name, None)
+            if cls is None:
+                continue
+            orig_init = cls.__init__
 
-        def make_init(orig, bucket):
-            def init(self, *args, **kwargs):
-                orig(self, *args, **kwargs)
-                bucket.append(self)
-            return init
+            def make_init(orig, bucket):
+                def init(self, *args, **kwargs):
+                    orig(self, *args, **kwargs)
+                    bucket.append(self)
+                return init
 
-        monkeypatch.setattr(cls, "__init__", make_init(orig_init, tracked))
+            monkeypatch.setattr(cls, "__init__", make_init(orig_init, tracked))
 
     yield
 

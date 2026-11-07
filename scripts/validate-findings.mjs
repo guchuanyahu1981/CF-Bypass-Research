@@ -21,7 +21,11 @@ import { readFileSync, existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const HERE = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+//: `--root=<dir>` 让门禁可以对一棵**临时树**跑（scripts/gates.selftest.mjs 用）。
+//: 门禁自己也得能被测试 —— 否则规则写错时它只会安静地"通过"。
+const rootArg = process.argv.find((a) => a.startsWith("--root="));
+const ROOT = rootArg ? resolve(rootArg.slice("--root=".length)) : HERE;
 
 function argValue(name) {
   const i = process.argv.indexOf(name);

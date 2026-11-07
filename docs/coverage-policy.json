@@ -17,6 +17,166 @@
     "以及哪条用例覆盖了它能测到的那部分 —— 不许用 waiver 掩盖『懒得写测试』。"
   ],
   "modules": {
+    "captchas/__init__.py": {
+      "min": 100,
+      "why": "包入口。惰性导出，只执行到 _EXPORTS 定义（见 test_package_init_is_lazy…）"
+    },
+    "captchas/akamai/__init__.py": {
+      "min": 100,
+      "why": "包入口。惰性导出，只执行到 _EXPORTS 定义（见 test_package_init_is_lazy…）"
+    },
+    "captchas/akamai/solve.py": {
+      "min": 23,
+      "why": "浏览器驱动主体（launch_async + 真实挑战页）不可离线执行；纯函数与包结构由 tests/test_captchas_offline.py 覆盖"
+    },
+    "captchas/aliyun/__init__.py": {
+      "min": 44,
+      "why": "包入口。惰性导出，只执行到 _EXPORTS 定义（见 test_package_init_is_lazy…）"
+    },
+    "captchas/aliyun/_run.py": {
+      "min": 94,
+      "why": "子进程入口：main() 的结果行契约由测试覆盖"
+    },
+    "captchas/aliyun/gap_cv.py": {
+      "min": 7,
+      "why": "经典 CV 间隙检测；需要真实滑块图，本仓库不含样本"
+    },
+    "captchas/aliyun/gap_vlm.py": {
+      "min": 0,
+      "why": "需要付费视觉 API（policy §2 付费预算 0），离线不可执行"
+    },
+    "captchas/aliyun/gap_yolo.py": {
+      "min": 0,
+      "why": "需要 ONNX 权重（.gitignore 排除）+ cv2 推理，离线不可执行"
+    },
+    "captchas/aliyun/solve.py": {
+      "min": 14,
+      "why": "浏览器驱动主体（launch_async + 真实挑战页）不可离线执行；纯函数与包结构由 tests/test_captchas_offline.py 覆盖"
+    },
+    "captchas/arkose/__init__.py": {
+      "min": 100,
+      "why": "包入口。惰性导出，只执行到 _EXPORTS 定义（见 test_package_init_is_lazy…）"
+    },
+    "captchas/arkose/predict.py": {
+      "min": 20,
+      "why": "ONNX 前后的纯函数可测；推理本身需要模型权重（仓库不含）"
+    },
+    "captchas/arkose/solve.py": {
+      "min": 7,
+      "why": "浏览器驱动主体（launch_async + 真实挑战页）不可离线执行；纯函数与包结构由 tests/test_captchas_offline.py 覆盖"
+    },
+    "captchas/awswaf/__init__.py": {
+      "min": 100,
+      "why": "包入口。惰性导出，只执行到 _EXPORTS 定义（见 test_package_init_is_lazy…）"
+    },
+    "captchas/awswaf/_selfcheck.py": {
+      "min": 15,
+      "why": "运维自检入口：只做导入与参数拼装，无浏览器逻辑"
+    },
+    "captchas/awswaf/solve.py": {
+      "min": 25,
+      "why": "浏览器驱动主体（launch_async + 真实挑战页）不可离线执行；纯函数与包结构由 tests/test_captchas_offline.py 覆盖"
+    },
+    "captchas/botguard/__init__.py": {
+      "min": 100,
+      "why": "包入口。惰性导出，只执行到 _EXPORTS 定义（见 test_package_init_is_lazy…）"
+    },
+    "captchas/botguard/solve.py": {
+      "min": 17,
+      "why": "浏览器驱动主体（launch_async + 真实挑战页）不可离线执行；纯函数与包结构由 tests/test_captchas_offline.py 覆盖"
+    },
+    "captchas/cloudflare/__init__.py": {
+      "min": 100,
+      "why": "包入口。惰性导出，只执行到 _EXPORTS 定义（见 test_package_init_is_lazy…）"
+    },
+    "captchas/cloudflare/_selfcheck.py": {
+      "min": 33,
+      "why": "运维自检入口：只做导入与参数拼装，无浏览器逻辑"
+    },
+    "captchas/cloudflare/solve.py": {
+      "min": 27,
+      "why": "浏览器驱动主体（launch_async + 真实挑战页）不可离线执行；纯函数与包结构由 tests/test_captchas_offline.py 覆盖"
+    },
+    "captchas/common/__init__.py": {
+      "min": 100,
+      "why": "包入口。惰性导出，只执行到 _EXPORTS 定义（见 test_package_init_is_lazy…）"
+    },
+    "captchas/common/browser.py": {
+      "min": 52,
+      "why": "纯逻辑：选择器解析 / route glob / 浏览器参数"
+    },
+    "captchas/common/looplock.py": {
+      "min": 100,
+      "why": "跨事件循环锁，已在 test_captchas_offline + test_multicaptcha 覆盖"
+    },
+    "captchas/common/mistral.py": {
+      "min": 55,
+      "why": "KeyPool 轮转/去重/冷却纯逻辑（网络调用部分不在口径内）"
+    },
+    "captchas/datadome/__init__.py": {
+      "min": 100,
+      "why": "包入口。惰性导出，只执行到 _EXPORTS 定义（见 test_package_init_is_lazy…）"
+    },
+    "captchas/datadome/_selfcheck.py": {
+      "min": 33,
+      "why": "运维自检入口：只做导入与参数拼装，无浏览器逻辑"
+    },
+    "captchas/datadome/solve.py": {
+      "min": 42,
+      "why": "浏览器驱动主体（launch_async + 真实挑战页）不可离线执行；纯函数与包结构由 tests/test_captchas_offline.py 覆盖"
+    },
+    "captchas/hcaptcha/__init__.py": {
+      "min": 44,
+      "why": "包入口。惰性导出，只执行到 _EXPORTS 定义（见 test_package_init_is_lazy…）"
+    },
+    "captchas/hcaptcha/image_solve.py": {
+      "min": 33,
+      "why": "浏览器驱动主体（launch_async + 真实挑战页）不可离线执行；纯函数与包结构由 tests/test_captchas_offline.py 覆盖"
+    },
+    "captchas/hcaptcha/solve.py": {
+      "min": 15,
+      "why": "浏览器驱动主体（launch_async + 真实挑战页）不可离线执行；纯函数与包结构由 tests/test_captchas_offline.py 覆盖"
+    },
+    "captchas/perimeterx/__init__.py": {
+      "min": 100,
+      "why": "包入口。惰性导出，只执行到 _EXPORTS 定义（见 test_package_init_is_lazy…）"
+    },
+    "captchas/perimeterx/renderers/__init__.py": {
+      "min": 100,
+      "why": "包入口。惰性导出，只执行到 _EXPORTS 定义（见 test_package_init_is_lazy…）"
+    },
+    "captchas/perimeterx/renderers/outlook.py": {
+      "min": 34,
+      "why": "降级链（fill/next）可测；完整导航依赖真浏览器与 Outlook 页面"
+    },
+    "captchas/perimeterx/solve.py": {
+      "min": 18,
+      "why": "浏览器驱动主体（launch_async + 真实挑战页）不可离线执行；纯函数与包结构由 tests/test_captchas_offline.py 覆盖"
+    },
+    "captchas/recaptcha/__init__.py": {
+      "min": 44,
+      "why": "包入口。惰性导出，只执行到 _EXPORTS 定义（见 test_package_init_is_lazy…）"
+    },
+    "captchas/recaptcha/image_solve.py": {
+      "min": 13,
+      "why": "浏览器驱动主体（launch_async + 真实挑战页）不可离线执行；纯函数与包结构由 tests/test_captchas_offline.py 覆盖"
+    },
+    "captchas/recaptcha/onnx_classifier.py": {
+      "min": 37,
+      "why": "目标名归一化可测；模型加载需要权重文件"
+    },
+    "captchas/recaptcha/solve.py": {
+      "min": 12,
+      "why": "浏览器驱动主体（launch_async + 真实挑战页）不可离线执行；纯函数与包结构由 tests/test_captchas_offline.py 覆盖"
+    },
+    "captchas/turnstile/__init__.py": {
+      "min": 44,
+      "why": "包入口。惰性导出，只执行到 _EXPORTS 定义（见 test_package_init_is_lazy…）"
+    },
+    "captchas/turnstile/solve.py": {
+      "min": 16,
+      "why": "浏览器驱动主体（launch_async + 真实挑战页）不可离线执行；纯函数与包结构由 tests/test_captchas_offline.py 覆盖"
+    },
     "solver/auth.py": {
       "min": 85,
       "why": "凭证入口；T-82 起门槛 85%（并发首启竞态/追加/OSError 分支已由 tests/test_auth_probe_gaps.py 覆盖）"
@@ -44,6 +204,10 @@
     "solver/compat.py": {
       "min": 97,
       "why": "YesCaptcha 兼容层：映射/生命周期/上限；错一个字段名就会让对接方静默拿到空 solution"
+    },
+    "solver/console_html.py": {
+      "min": 100,
+      "why": "T-78 只读控制台的 HTML/JS 常量：与 statuspage.py 同性质（常量非逻辑），契约由 tests/test_console.py 的 9 条用例守住（401/无写面/CSP/no-store/不含 token/白名单渲染/四区块空态/无外部资源）"
     },
     "solver/detect.py": {
       "min": 97,
@@ -101,13 +265,23 @@
       "min": 100,
       "why": "只读状态页的 HTML/JS 常量：它是常量不是逻辑，覆盖率天然 100%；契约由 test_observability 的 6 条页面用例守住（免鉴权/无数据/无外部资源/按钮真绑/转义）"
     },
-    "solver/console_html.py": {
+    "solver/ui_tokens.py": {
       "min": 100,
-      "why": "T-78 只读控制台的 HTML/JS 常量：与 statuspage.py 同性质（常量非逻辑），契约由 tests/test_console.py 的 9 条用例守住（401/无写面/CSP/no-store/不含 token/白名单渲染/四区块空态/无外部资源）"
+      "why": "两页共用的视觉令牌常量（v6.3 页面去重）：模块加载即执行，没有分支；契约由 test_statuspage/test_console 的页面断言守住"
     },
     "solver/vendors.py": {
       "min": 94,
       "why": "厂商能力表的单一事实源（v6.2 从 detect/route 两处合并而来）。这表一旦与真实能力不一致，调用方会拿到假承诺或假拒绝 —— 由 tests/test_differential_oracle.py（81 例）+ test_multicaptcha 共同兜住"
+    }
+  },
+  "_scopes": {
+    "solver/": {
+      "min": 80,
+      "why": "原 --cov-fail-under=80 的等价物；按范围单独算，不与 captchas/ 混平均"
+    },
+    "captchas/": {
+      "min": 20,
+      "why": "v6.3 实测 22.2%。留 2 个点给平台差异（v5.0.1 曾因 Windows/Linux 覆盖率差 2 个点把 CI 打红）；门槛的作用是防它退回到 2%"
     }
   }
 }

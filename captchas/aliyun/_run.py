@@ -16,7 +16,7 @@ import asyncio
 import json
 import sys
 
-from aliyun.solve import solve_aliyun
+from captchas.aliyun.solve import solve_aliyun
 
 
 def main():

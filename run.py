@@ -106,9 +106,17 @@ def cmd_doctor(a):
 
 
 def cmd_test(a):
-    step("Python 全量测试 + 覆盖率门槛（policy.md: ≥80%）")
-    return run([sys.executable, "-m", "pytest", "tests/", "-q",
-                "--cov=solver", "--cov-report=term-missing", "--cov-fail-under=80"])
+    # v6.3：覆盖率门禁按范围分算（solver ≥80 / captchas ≥20），逐模块下限在
+    # docs/coverage-policy.json。`--cov-fail-under` 已由 check-coverage.mjs 接手：
+    # 两个范围混在一个整体数字里会互相抵消。
+    step("Python 全量测试 + 覆盖率（solver/ 与 captchas/）")
+    rc = run([sys.executable, "-m", "pytest", "tests/", "-q",
+              "--cov=solver", "--cov=captchas", "--cov-report=term-missing",
+              "--cov-report=json:coverage.json"])
+    if rc:
+        return rc
+    step("逐模块 + 分范围覆盖率门禁")
+    return run(["node", "scripts/check-coverage.mjs", "--coverage-json=coverage.json"])
 
 
 def cmd_quick(a):
@@ -289,13 +297,17 @@ def cmd_verify(a):
         cov = []
     else:
         pytest_files = ["tests/"]
-        cov = ["--cov=solver", "--cov-report=term", "--cov-fail-under=80"]
+        cov = ["--cov=solver", "--cov=captchas", "--cov-report=term",
+               "--cov-report=json:coverage.json"]
 
     def py():
         return run([sys.executable, "-m", "pytest", *pytest_files, "-q", *cov])
 
     def compileall():
-        return run([sys.executable, "-m", "compileall", "-q", "solver", "scripts", "tests"])
+        return run([sys.executable, "-m", "compileall", "-q", "solver", "scripts", "tests", "captchas"])
+
+    def coverage_gate():
+        return run(["node", "scripts", "check-coverage.mjs", "--coverage-json=coverage.json"])
 
     def go():
         return cmd_go(a)
@@ -340,6 +352,7 @@ def cmd_verify(a):
 
     rc = run_steps([
         ("pytest", py),
+        ("coverage-gate", coverage_gate),
         ("compileall", compileall),
         ("go vet/test", go),
         ("findings", findings),

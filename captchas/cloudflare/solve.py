@@ -19,7 +19,7 @@ import time
 import cloakbrowser
 
 from captchas.common.browser import browser_kwargs, run_pre_actions, run_post_fetch
-from turnstile.solve import _click_turnstile_checkbox
+from captchas.turnstile.solve import _click_turnstile_checkbox
 
 log = logging.getLogger(__name__)
 from captchas.common.looplock import loop_lock

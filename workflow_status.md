@@ -1302,3 +1302,122 @@ R-E2E-1 4 次 → R-E2E-2 6 次 → R-E2E-3 2 次 = 本轮共 **12 次**；累�
 - 真机预算仍为 **58/80**，本轮**未消耗**（全部离线）。
 - `service_report.py` 只比对**字段形状**，不比对语义（类型不变、含义变的情况抓不到）——
   这是"确定性"的代价，已在脚本注释里写明。
+
+---
+
+## 批次 B 施工记录（2026-11-06，把门禁边界推到嫁接层）
+
+**背景**：2026-11-06 第八轮审计（`plans/审计与改进指南-v6.3→v7.0.md`）实测 `captchas/`
+覆盖率 **2%**（2512/2556 语句未覆盖）、且**没有任何测试导入任何求解器**。用户拍板：**直接上 B**。
+
+### B1｜`captchas/` 纳入覆盖率门禁
+
+| 项 | 动作 |
+|---|---|
+| `scripts/check-coverage.mjs` | 扫描范围 `solver/` → `solver/` + `captchas/`；新增 `_scopes` 分范围整体门槛（`solver/ ≥80`、`captchas/ ≥20`）；`--cov-fail-under=80` 从 CI 下沉到这里（混算会把 90% 与 22% 平均成 64%，两边都失去信号） |
+| `docs/coverage-policy.json` | 40 个 `captchas/` 文件全部登记（min = 实测值 floor）；新增 `_scopes`；`solver/ui_tokens.py` 登记（并发会话新增的模块，见下） |
+| `.github/workflows/ci.yml` | `--cov=solver --cov=captchas`，去掉 `--cov-fail-under=80` |
+| `scripts/validate-docs.mjs` | 覆盖率口径改成"取 `solver/` 子树"（原来读 `totals`，双范围下会变成混合值）；新增 `--root=` 供自测 |
+| `policy.md` / `README.md` / `test_ledger.md` | 命令与模块数同步（64 个模块） |
+
+实测：`captchas/` **2% → 22.21%**；`solver/` 89.65%；64 个模块全达标。
+
+### B2｜让嫁接层"可导入、可测"
+
+| 问题 | 修法 | 证据 |
+|---|---|---|
+| 11 个求解器里 2 个用裸包名（`arkose.predict` / `turnstile.solve`），`captchas` 不是正规包 | 全部改 `captchas.*`（另含 3 个 `_selfcheck.py` 与 `aliyun/_run.py`）；`multicaptcha` 分发同步改包名，`sys.path` 只留仓库根 | 包导入实测 9/11 → **11/11** |
+| 子包 `__init__` 急切导入 `solve`（→ cloakbrowser），离线纯逻辑不可导入 | 四个 `__init__` 改 PEP 562 惰性导出 | `captchas.hcaptcha.image_solve` 现在零依赖可导入 |
+| 零测试导入求解器 | 新增 `tests/test_captchas_offline.py`（**47 项**）：11 个求解器按包导入、裸导入静态守门、惰性导出、cookie 解析/判据、选择器解析、route glob、浏览器参数、签名、二次方程反解、KeyPool 轮转/冷却、aliyun 子进程结果行契约、renderer 降级链、hcaptcha 网格链路 | 47 passed / 0.9s |
+| 运行时分发会不会因为改包名而断 | **真起服务**（脚本模式 `python solver/service.py`）→ `POST /solve want=datadome` / `turnstile_x` → 都返回 `503 not-configured` + 安装提示（不是 ImportError 崩溃） | 已验证 |
+
+### B3｜门禁自测（`scripts/gates.selftest.mjs`）
+
+四道门禁（`validate-docs` / `validate-openapi` / `validate-findings` / `check-coverage`，合计 900 行）此前**零自测**。新增 18 条样例：每条门禁先证明"合法输入会绿"，再逐条注入它声称会拦的漂移（数字漂移 / 锚点消失 / 事实源缺失 / 漏写路由 / 幽灵路由 / 版本不一致 / verdict 非法 / 证据不存在 / confirmed 缺 severity / 未登记模块 / 幽灵登记 / 低于门槛 / 缺整个范围 / 范围整体跌破）。
+
+**对自测的自测**：把 `validate-findings.mjs` 的 `process.exit(problems.length === 0 ? 0 : 1)` 改成 `process.exit(0)`（典型静默失效）→ 自测退出码 **1**；还原后 18/18 绿。
+
+### B4｜ResourceWarning 的真实根因（不是"没关"，是"关错了对象"）
+
+| 项 | 结果 |
+|---|---|
+| 现象 | 带 `--cov` 全量跑 **45 条** `unclosed database`；不带 `--cov` 为 0；`-W error::ResourceWarning` 下 100 warnings 仍 **exit 0** |
+| 根因 | `tests/test_cache_sqlite.py` 用**脚本模式** `import cache`，而 `conftest.py` 的 autouse 夹具只钩了 `solver.cache.SqliteStore` —— 两个模块对象，后者创建的连接从不 close |
+| 修法 | 夹具同时钩 `sys.modules["cache"]`（两个模块身份都追踪） |
+| 实测 | 带 `--cov` 的 `unclosed database` **45 → 0**；全量 1021 passed / 7 skipped |
+
+### 本轮门禁实测（全部真实执行）
+
+| 门禁 | 结果 |
+|---|---|
+| Python | **1021 passed / 7 skipped**（971 → 1028 collected） |
+| 覆盖率 | `solver/` 89.65%（门禁 80）· `captchas/` 22.21%（门禁 20）· **64 模块全达标** |
+| 门禁自测 | 18/18（含"改坏门禁 → 自测变红"的反向验证） |
+| 文档数字 | 9 处一致（facts 已 `--write` 重测：1028 / 90% / 46 / 54） |
+| openapi | 14 个操作一致 |
+| findings | 54 条一致 |
+| 仓库卫生 | exit 0（306 跟踪文件） |
+| compileall / go vet / go test | 全绿 |
+
+### 并发会话披露（G-R1 再次发生）
+
+施工期间另一会话正在同一工作副本上做"两页去重 + SEO"：新增 `solver/ui_tokens.py`，
+改 `console_html.py` / `statuspage.py` / `service.py` / `test_console.py` / `test_statuspage.py`，
+并新增 `site/`、`计划书/`（09:16–09:22 时间戳）。
+
+处置：**不碰对方文件**；只在覆盖率策略里登记了 `solver/ui_tokens.py`（门禁规则要求的动作，
+值取实测 100%）。中途它们让 `console_html.py`/`statuspage.py` 掉到 75%，等其测试补上后回到 100%。
+**本轮所有红色都先确认归属再处理**，没有替对方"顺手修"。
+
+### 本轮未做（如实）
+
+- 未 commit / push（用户未要求）。
+- 未跑真机（预算仍 58/80）。
+- `captchas/` 的 `gap_yolo` / `gap_vlm` / `gap_cv` 仍为 0–8%：前者需 ONNX 权重（`.gitignore` 排除），
+  中者需付费视觉 API（`policy.md` §2 预算 0），后者需真实滑块样本 —— 按**能力边界**登记，不冒充欠账。
+- 求解器本体仍未真机验证（缺 cloakbrowser 二进制）——本轮证明的是"可导入、可分发、纯函数正确"。
+
+---
+
+## 2026-11-08 公开站/UI V1.1 收口与发版
+
+### 契约
+
+把《视觉交互与可发现性设计指南 V1》里"声称已落地"的部分核实到真实实现；补齐空门禁与缺失交互；文档与实现对齐；通过全门禁后发版。
+
+### 本轮实际修复
+
+| 类别 | 项 |
+|---|---|
+| 空门禁 | 新增 `check-env.mjs`（构建期 origin 必填）、`check-out.mjs`（产物 canonical/hreflang/sitemap/robots/JSON-LD/OG/占位残留）、`gen-og.mjs`（固化 `/og/{zh,en}.png`） |
+| 缺失交互 | 3D 场景 DOM 控制按钮 + 说明卡 + 实测值标签；移除凭证自动旋转；`frameloop="demand"` |
+| 缺失区块 | 首页「实测数据摘要」4 行 + `/benchmarks/` 链接 |
+| 缺失动效 | 导航滚动背景（`site-header--scrolled`） |
+| 单一事实源 | Hero 三个数字改为引用 `benchmarkId`，由 `formatValue()` 渲染；`test:content` 扫描组件里带单位的硬编码数字 |
+| 合规门禁 | `test:content` 新增合规文案断言（免责声明/非关联/授权边界） |
+| 现有两页 | 内联 base64 SVG favicon（消除 Chrome `/favicon.ico` 404） |
+| 本机缺陷 | `_run_gen` 指定 UTF-8 解码（Windows GBK 崩溃导致 3 个测试失败） |
+| 文档对齐 | 字体（系统栈）、文件路径、`<details>` 菜单、FAQ 5 条、代码块并排、动效清单状态、证据落点 |
+
+### 门禁实测（真实执行）
+
+| 门禁 | 结果 |
+|---|---|
+| 无 env `npm run build` | 失败（check-env 拦截） |
+| 真实 origin `npm run build` | 20 路由；postbuild 12 页全绿 |
+| `verify:csp` | 17 HTML / 20 hash |
+| `test:content` | 10/10 |
+| `verify:site` | 14 路由 / axe 0 / 降级 static |
+| `test:e2e` | 18/18 |
+| Lighthouse 桌面 | 100/100/100/100；LCP 0.4s、CLS 0、TBT 0ms |
+| 包体 | 初始 232,745 B；3D 241,853 B；CSS 5,438 B |
+| Python 全量 | 1023 passed / 7 skipped |
+| 覆盖率门禁 | 64 模块全过；solver 89.65%、captchas 22.21% |
+| UI E2E | 35/35 |
+| 文档/结论/契约 | validate-docs 9 处一致；findings 54；openapi 14 操作 |
+| `npm audit --omit=dev` | 0 漏洞（dev 工具链 9 high 记录为例外） |
+
+### 未做（如实）
+
+- 部署：无域名、无 Pages token，按用户早先选择停在本地；真实托管头未验证。
+- 真机低端设备、搜索量、英文母语审校未做。
