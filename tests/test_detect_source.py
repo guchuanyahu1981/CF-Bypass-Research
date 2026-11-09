@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -66,9 +67,14 @@ def test_fixture_matrix_classifies_each_vendor():
 
 # ── 3. 生成器 --check：上游缺失必须 SKIP（不许静默通过）──
 def _run_gen(*args: str) -> tuple[int, str]:
+    # 子进程必须显式跑在 UTF-8 上：Windows 上 Python 的 stdout 默认跟随**控制台代码页**
+    # （本机 cp936），生成器打的中文会以 GBK 字节写出，这里按 utf-8 解码就是一堆 U+FFFD —
+    # 于是"找『待验证』"这类断言的失败与生成器本身无关，只与跑测试的机器有关。
+    env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
     proc = subprocess.run(
         [sys.executable, str(GEN), *args],
-        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60, cwd=str(ROOT),
+        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60,
+        cwd=str(ROOT), env=env,
     )
     return proc.returncode, proc.stdout + proc.stderr
 

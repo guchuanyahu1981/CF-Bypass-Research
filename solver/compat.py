@@ -113,6 +113,13 @@ COMPAT_ERROR_BY_CODE: dict[ErrorCode, str] = {
     ErrorCode.TRANSPORT: "ERROR_TRANSPORT",
     ErrorCode.INTERNAL: "ERROR_INTERNAL",
     ErrorCode.UNSOLVED: "ERROR_CAPTCHA_UNSOLVABLE",
+    # v6.4 C3 新增的路径级码：兼容层**拿不到**它们（路由在进入 `/createTask` 之前就定了，
+    # 兼容端点的业务错误一律 HTTP 200 + errorId），但映射表必须完整 ——
+    # 缺项时下面那句 `.get(..., "ERROR_INTERNAL")` 会静默兜底，
+    # 将来真有人把 404/405 透到兼容层，客户端只会看到一个语义不符的 ERROR_INTERNAL，
+    # 而且没人会因为"表里少一行"收到任何信号。
+    ErrorCode.NOT_FOUND: "ERROR_INTERNAL",
+    ErrorCode.METHOD_NOT_ALLOWED: "ERROR_INTERNAL",
 }
 
 # ── 错误码（v6.2：对齐 YesCaptcha 生态的真实词表）──

@@ -3,7 +3,7 @@
 # 硬约束（改这个文件前先读）：
 #   1. 禁止 `python -m camoufox fetch`：CI 只校验逻辑，不下载几百 MB 的浏览器二进制；
 #      需要浏览器的用例在 tests/ 里全部走替身（FakeBrowser），不依赖真二进制。
-#   2. 禁止任何真实联网请求：不打真实目标站、不跑《下一步改进指南》§15 的实验。
+#   2. 禁止任何真实联网请求：不打真实目标站、不跑真机实验（预算纪律见 policy.md §2）。
 #   3. 覆盖率门槛 80%（policy.md）+ 逐模块门禁（docs/coverage-policy.json）+ 文档数字一致性
 #      + 接口规格一致性，任一不过即红。
 #   4. Windows 专属行为（SO_REUSEADDR 语义、NTFS 权限）由本地测试覆盖，CI 只跑 Linux。
@@ -109,4 +109,4 @@ jobs:
 #   在它变成"绿就是真绿"之前，e2e 留在本地（`run.ps1 e2e`，实测 30/30、20.3s）。
 #   解除条件（任一）：①上游插件源稳定；②把 UBO 的 xpi 预先放进构建上下文/制品，
 #   让预热不依赖 GitHub；③接受首启数分钟慢启动并相应放宽 e2e 的就绪预算。
-#   相关记录：`docs/findings.json` 的 F-043、`workflow_status.md` 批次 C。
+#   相关记录：`docs/findings.json` 的 F-043（原 workflow_status.md 批次 C 记录已并入 git 历史）。

@@ -42,8 +42,14 @@ type Cookie struct {
 }
 
 // Clearance 一次求解结果。
+//
+// 产物字段随 `want` 变（服务端 `challenges.RESULT_FIELD`）：clearance → `CFClearance`、
+// turnstile/recaptcha_v3 → `Token`、awswaf → `AWSWAFToken`。三者互斥，其余字段（UA/cookie/
+// 时效/出口）对四类产物都存在。
 type Clearance struct {
 	CFClearance string            `json:"cf_clearance"`
+	Token       string            `json:"token"`         // want=turnstile / recaptcha_v3
+	AWSWAFToken string            `json:"aws_waf_token"` // want=awswaf
 	UserAgent   string            `json:"user_agent"`
 	Cookies     map[string]string `json:"cookies"`     // deprecated：仅为兼容旧服务端
 	CookieList  []Cookie          `json:"cookie_list"` // 结构化，优先使用
@@ -162,6 +168,20 @@ type solveReq struct {
 	URL     string  `json:"url"`
 	Timeout float64 `json:"timeout,omitempty"`
 	Force   bool    `json:"force,omitempty"`
+	// v6.4 C5：服务端 /solve 早就有这三个字段，Go 客户端此前一律走默认语义。
+	// 全部 omitempty —— 省略时请求体与旧客户端逐字节一致（默认语义不变）。
+	Want    string `json:"want,omitempty"`
+	Route   string `json:"route,omitempty"`
+	Sitekey string `json:"sitekey,omitempty"`
+}
+
+// SolveOptions 是透传给 `/solve` 的**调用方语义**字段（v6.4 C5）。
+//
+// 三个字段都留空 = 与旧客户端完全相同的请求（`want` 默认 clearance，`route` 默认 fixed）。
+type SolveOptions struct {
+	Want    string // 产物类型：""=clearance（cf_clearance）、turnstile、recaptcha_v3、awswaf
+	Route   string // 选路模式：""=fixed（默认）、auto、cfsolve、browser
+	Sitekey string // want=turnstile/recaptcha_v3/awswaf 时的 sitekey
 }
 
 type solveResp struct {
@@ -387,7 +407,7 @@ func (c *Client) Get(ctx context.Context, target string) (*Clearance, error) {
 		return hit, nil
 	}
 	// force=false：允许求解服务返回它自己的域名缓存（省掉一次浏览器求解）
-	return c.solveShared(ctx, target, false)
+	return c.solveShared(ctx, target, false, SolveOptions{})
 }
 
 // cachedCopy 返回缓存副本（未命中/已进入续期窗口时返回 nil）。
@@ -443,7 +463,22 @@ func (c *Client) rememberLocked(key string, cl *Clearance) {
 
 // GetFresh 强制重新求解（忽略本地缓存与服务端缓存）。
 func (c *Client) GetFresh(ctx context.Context, target string) (*Clearance, error) {
-	return c.solveShared(ctx, target, true)
+	return c.solveShared(ctx, target, true, SolveOptions{})
+}
+
+// SolveWithOptions 按显式选项求解一次（v6.4 C5）。
+//
+// 与 Get/GetFresh 的区别是**不读也不写本地缓存**，也不参与单飞 —— 这不是图省事：
+// 本客户端的缓存键是"域 + 出口"，它成立的前提是产物恒为 cf_clearance。而
+// want=turnstile/recaptcha_v3 拿到的是**一次性 token**，塞进同一个键的后果是
+// 下一次 Get 拿到一个不是 clearance 的东西，且整个 TTL 内不会自愈。
+//
+// force=false：仍然允许求解服务用它自己的按域缓存（token 类产物服务端本来就不缓存）。
+func (c *Client) SolveWithOptions(ctx context.Context, target string, opts SolveOptions) (*Clearance, error) {
+	if hostOf(target) == "" {
+		return nil, fmt.Errorf("无法解析域名: %s", target)
+	}
+	return c.solve(ctx, target, false, opts)
 }
 
 // solveShared 是 Get/GetFresh 的单飞外壳：同 key 并发只让 leader 真的求解。
@@ -452,7 +487,7 @@ func (c *Client) GetFresh(ctx context.Context, target string) (*Clearance, error
 //  1. 失败也要 close(done) 并从 flights 里删除，否则等待者永久阻塞；
 //  2. 等待者必须先尊重**自己**的 ctx（leader 慢不代表等待者要陪着超时）；
 //  3. 只缓存"确实还没进入续期窗口"的结果——TTL=0/已过期的响应进缓存等于每次都重解。
-func (c *Client) solveShared(ctx context.Context, target string, force bool) (*Clearance, error) {
+func (c *Client) solveShared(ctx context.Context, target string, force bool, opts SolveOptions) (*Clearance, error) {
 	key := c.cacheKey(target)
 
 	c.mu.Lock()
@@ -474,7 +509,7 @@ func (c *Client) solveShared(ctx context.Context, target string, force bool) (*C
 	c.mu.Unlock()
 
 	// leader：结果写回 flight，然后**无论成败**都收尾
-	f.cl, f.err = c.solve(ctx, target, force)
+	f.cl, f.err = c.solve(ctx, target, force, opts)
 
 	c.mu.Lock()
 	if f.err == nil && f.cl != nil && time.Now().Add(c.renewBefore).Before(f.cl.expiresAt()) {
@@ -504,12 +539,19 @@ func (c *Client) invalidate(key string) {
 // 没有这层收敛，一次"全站凭证同时过期"就会变成 N 倍求解风暴，把浏览器打满。
 func (c *Client) revalidateOnce(ctx context.Context, target string) (*Clearance, error) {
 	c.invalidate(c.cacheKey(target))
-	return c.solveShared(ctx, target, true)
+	return c.solveShared(ctx, target, true, SolveOptions{})
 }
 
-// solve 是 Get/GetFresh 的共同实现。force=false 时服务端可返回它自己的缓存。
-func (c *Client) solve(ctx context.Context, target string, force bool) (*Clearance, error) {
-	body, err := json.Marshal(solveReq{URL: target, Timeout: c.solveTimeout.Seconds(), Force: force})
+// solve 是 Get/GetFresh/SolveWithOptions 的共同实现。force=false 时服务端可返回它自己的缓存。
+func (c *Client) solve(ctx context.Context, target string, force bool, opts SolveOptions) (*Clearance, error) {
+	body, err := json.Marshal(solveReq{
+		URL:     target,
+		Timeout: c.solveTimeout.Seconds(),
+		Force:   force,
+		Want:    opts.Want,
+		Route:   opts.Route,
+		Sitekey: opts.Sitekey,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -552,12 +594,27 @@ func (c *Client) solve(ctx context.Context, target string, force bool) (*Clearan
 		// HTTP 200 + ok:false = 求解失败（不是请求失败），语义见 docs/API.md
 		return nil, &APIError{StatusCode: resp.StatusCode, Code: sr.ErrorCode, Message: sr.Error, Stage: sr.Stage, Hint: sr.Hint}
 	}
-	if sr.CFClearance == "" {
-		return nil, errors.New("求解服务未返回 cf_clearance")
+	// 校验"这次 want 对应的那个产物"到齐了（服务端 RESULT_FIELD）：
+	// 只查 cf_clearance 的旧写法会让 want=turnstile 永远返回错误，而客户端明明已经拿到了 token。
+	switch opts.Want {
+	case "", "clearance":
+		if sr.CFClearance == "" {
+			return nil, errors.New("求解服务未返回 cf_clearance")
+		}
+	case "awswaf":
+		if sr.AWSWAFToken == "" {
+			return nil, errors.New("求解服务未返回 aws_waf_token")
+		}
+	default: // turnstile / recaptcha_v3 及其它一次性 token 产物
+		if sr.Token == "" {
+			return nil, fmt.Errorf("求解服务未返回 token（want=%s）", opts.Want)
+		}
 	}
 
 	cl := &Clearance{
 		CFClearance: sr.CFClearance,
+		Token:       sr.Token,
+		AWSWAFToken: sr.AWSWAFToken,
 		UserAgent:   sr.UserAgent,
 		Cookies:     sr.Cookies,
 		CookieList:  sr.CookieList,

@@ -24,7 +24,7 @@
 | UI 单测 | `python -m pytest tests/test_console.py tests/test_statuspage.py -q` | 36 passed（2026-11-08 复跑；24 基线 + 12 新增） | `ui-unit.txt` |
 | UI E2E | `python scripts/verify_ui_e2e.py` | 35/35 PASS（2026-11-08 复跑；含 320/360 宽度） | `ui-e2e.txt` |
 | Go | `go test ./...` | ok 6.428s | `go-tests.txt` |
-| CI | GitHub Actions `site-ci` run `42147228247` | 全绿（含 Lighthouse desktop） | https://github.com/lza6/CF-Bypass-Research/actions/runs/42147228247 |
+| CI | GitHub Actions：`site-ci` run `42419701920` + `ci` run `42419767594` | 双 workflow 全绿（含 Lighthouse desktop） | https://github.com/lza6/CF-Bypass-Research/actions/runs/42419701920 |
 
 ## 关键实现结论（写进计划书的增量）
 

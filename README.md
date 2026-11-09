@@ -286,7 +286,7 @@ scripts/
   probe_camoufox.py     # Camoufox 过盾实验
   diag_challenge.py     # 挑战页 DOM 诊断：iframe / checkbox / 按钮 / 截图
 captchas/               # 万盾求解器副本（11 厂商；自包含，不追上游，见 captchas/README.md）
-tests/                  # 1030 项 Python 测试（注入假浏览器/假后端，离线）
+tests/                  # 1065 项 Python 测试（注入假浏览器/假后端，离线）
 docs/
   项目规格.md            # ★ 单一事实源：是什么/边界/承诺什么/不承诺什么
   API.md                # ★ 接口契约（参数/响应/错误码表）
@@ -301,14 +301,14 @@ requirements.txt        # 精确锁版本的运行期依赖
 requirements-dev.txt    # 开发/CI 依赖（pytest-cov）
 run.ps1 / run.bat       # ★ 统一入口：doctor / test / go / smoke / e2e / bench / verify / stop（v4.0）
 policy.md               # 质量门禁（覆盖率 80%、证据门禁、提交规则），写死数值
-workflow_status.md      # 任务契约 / 验收表 / 验证日志 / 审查记录
+计划书/                 # 项目总状态与待办清单（唯一状态源：待办/决策/风险/审查记录）
 test_ledger.md          # 测试台账：每个验收项对应哪些用例
 evidence/               # 验收证据（真实命令 + 真实输出），一个任务卡一个 json
 .github/workflows/ci.yml# CI：python(覆盖率门槛) + go(vet/test -race) + findings 三 job，全程离线
 Dockerfile              # 容器镜像（camoufox 二进制在 build 阶段 fetch；3.54GB 含插件预热）
 docker-compose.yml      # 多 worker + 共享缓存卷
 plans/
-  下一步改进指南*.md     # 施工图（任务卡 + 验收门禁），plans/证据/ 存真机证据
+  证据/                  # 验收证据（真机 / UI），索引见 plans/README.md
 ```
 
 ---
@@ -504,7 +504,7 @@ CF 的 `chl_page` 三者全中。这就是"离线纯算"走不通的机理说明
    把 CF 脚本的结构假设做成断言矩阵 + 差分报告，配合 `corpus/` 快照做离线回归；
    `research.py gaps` 能从真实脚本自动推出 VM 原语缺口清单。
    CF 一改版就跑 `research.py assertions` / `diff`，直接指出"哪条断言坏了、坏在哪一行"，
-   **不需要再起真机猜**。详见 `plans/下一步改进指南.md` 的 T-66~T-77。
+   **不需要再起真机猜**。详见 `scripts/research.py`（v6.0 T-66~T-77 已落地）。
 3. **优先"绕开"而不是"过"**：很多场景换入口域名 / 上游 API 直连比过盾便宜一个数量级。
 4. **TLS 指纹是回放层技术**，不是求解层：没有 cookie 时光有 JA3 也没用。
 

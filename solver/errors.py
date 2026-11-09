@@ -28,6 +28,8 @@ class ErrorCode(str, Enum):
     UNAUTHORIZED = "unauthorized"           # 缺少或错误的 Bearer token
     RATE_LIMITED = "rate-limited"           # **预留值**：当前没有按 host 限流，不会产生（见下）
     BUSY = "busy"                           # 准入拒绝：队列已满 / inflight 已达上限
+    NOT_FOUND = "not-found"                 # 路径不存在（v6.4 C3：此前是裸字面量，不在枚举里）
+    METHOD_NOT_ALLOWED = "method-not-allowed"  # 该路径不支持的 HTTP 方法（v6.4 C3）
 
     # —— 环境级（5xx）——
     NOT_CONFIGURED = "not-configured"       # 后端未就绪：camoufox 未安装 / 二进制未 fetch
@@ -52,6 +54,8 @@ STATUS_BY_CODE: dict[ErrorCode, int] = {
     ErrorCode.UNAUTHORIZED: 401,
     ErrorCode.BUSY: 429,
     ErrorCode.RATE_LIMITED: 429,
+    ErrorCode.NOT_FOUND: 404,
+    ErrorCode.METHOD_NOT_ALLOWED: 405,
     ErrorCode.NOT_CONFIGURED: 503,
     ErrorCode.BROWSER_UNAVAILABLE: 503,
     ErrorCode.TIMEOUT: 504,

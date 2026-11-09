@@ -35,7 +35,7 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config):
             f"(涉及 {len(reasons)} 个参数化用例) —— 具体原因见 "
             "plans/证据/research-assertions-*.json 的 skip_reason："
             "「样本库为空」或「样本未走到 stage2」；"
-            "补样本见 plans/下一步改进指南.md §6 待授权清单",
+            "补样本见 计划书/CF-Bypass-Research-项目总状态与待办清单.md §3.3 待授权清单",
         )
 
 # hypothesis profile 注册（T-81）：性质测试默认跑 50 examples；

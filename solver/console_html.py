@@ -27,8 +27,10 @@
 from __future__ import annotations
 
 try:  # package import (python -m solver.service)
+    from ._page_common import COMMON_JS
     from .ui_tokens import TOKENS_CSS
 except ImportError:  # script import (python solver/service.py)
+    from _page_common import COMMON_JS
     from ui_tokens import TOKENS_CSS
 
 #: 页面单文件（HTML + CSS + JS）。刻意不用模板引擎、不用构建步骤。
@@ -136,7 +138,6 @@ __UI_TOKENS__
 <script>
 (function () {
   "use strict";
-  var TOKEN_KEY = "cfsolve_token";
   var stateEl = document.getElementById("state");
   var bannerEl = document.getElementById("banner");
   var svcEl = document.getElementById("svc");
@@ -150,33 +151,8 @@ __UI_TOKENS__
   var refreshBtn = document.getElementById("refresh");
   var forgetBtn = document.getElementById("forget");
 
-  function token() { return sessionStorage.getItem(TOKEN_KEY) || ""; }
-
-  function setBanner(msg, isError) {
-    if (!msg) { bannerEl.hidden = true; return; }
-    bannerEl.hidden = false;
-    bannerEl.textContent = msg;
-    bannerEl.className = isError ? "error" : "empty";
-  }
-
-  function setState(text, cls) {
-    stateEl.textContent = text;
-    stateEl.className = "badge " + (cls || "");
-  }
-
-  // 只用 textContent / createElement —— DOM 写入面收敛在这两个 API 上（约束 4）。
-  function setKV(el, pairs) {
-    while (el.firstChild) { el.removeChild(el.firstChild); }
-    // 必须把 class 还原成 kv：setEmpty() 会把它改成 "empty"，不还原就丢掉
-    // `display:grid` → 键值从两列退化成上下堆叠（真 Chrome 实测过）。
-    el.className = "kv";
-    pairs.forEach(function (p) {
-      var dt = document.createElement("dt"); dt.textContent = p[0];
-      var dd = document.createElement("dd"); dd.textContent = p[1] == null ? "—" : String(p[1]);
-      if (p[2]) dd.className = p[2];
-      el.appendChild(dt); el.appendChild(dd);
-    });
-  }
+  __COMMON_JS__
+  bindPage({ state: stateEl, banner: bannerEl });
 
   // 时间格式化：服务端可能给 ISO 字符串（assertions 矩阵）或 epoch 秒（其它路径）。
   // 统一在这里收口 —— 原来只按 *1000 处理，ISO 字符串会渲染成 "Invalid Date"。
@@ -186,29 +162,13 @@ __UI_TOKENS__
     return isNaN(d.getTime()) ? String(v) : d.toLocaleString();
   }
 
-  function setEmpty(el, msg) {
-    while (el.firstChild) { el.removeChild(el.firstChild); }
-    el.className = "empty";
-    el.textContent = msg;
-  }
-
-  // 统一的 JSON 拉取：所有端点同一套 header/cache 语义（多一个端点就多一份漂移风险）
-  function getJSON(path) {
-    var headers = {};
-    var t = token();
-    if (t) headers["Authorization"] = "Bearer " + t;
-    return fetch(path, { headers: headers, cache: "no-store" }).then(function (r) {
-      return r.json().then(function (body) { return { status: r.status, body: body }; })
-        .catch(function () { return { status: r.status, body: {} }; });
-    });
-  }
 
   function getHealth() { return getJSON("/health"); }
 
   function renderEmptyStates() {
     setEmpty(svcEl, "未收到 /health 响应：检查服务是否启动");
     setEmpty(cacheEl, "缓存为空：尚未解过任何域");
-    setEmpty(researchEl, "corpus 为空：需一次性抓取授权（见 plans/下一步改进指南.md §6）");
+    setEmpty(researchEl, "corpus 为空：需一次性抓取授权（见 计划书/CF-Bypass-Research-项目总状态与待办清单.md §3.3）");
     setEmpty(errEl, "无错误");
   }
 
@@ -262,7 +222,7 @@ __UI_TOKENS__
     ]);
     var r = b.research;
     if (!r) {
-      setEmpty(researchEl, "corpus 为空：需一次性抓取授权（见 plans/下一步改进指南.md §6）");
+      setEmpty(researchEl, "corpus 为空：需一次性抓取授权（见 计划书/CF-Bypass-Research-项目总状态与待办清单.md §3.3）");
     } else {
       var skipped = r.assertions_skipped || 0;
       var total = r.assertions_total || 0;
@@ -472,6 +432,8 @@ __UI_TOKENS__
 """
 
 #: 预计算长度：响应要写 `Content-Length`，每次请求重新 encode 是浪费。
-CONSOLE_PAGE_HTML = CONSOLE_PAGE_HTML.replace("__UI_TOKENS__", TOKENS_CSS)
+CONSOLE_PAGE_HTML = (CONSOLE_PAGE_HTML
+                     .replace("__UI_TOKENS__", TOKENS_CSS)
+                     .replace("__COMMON_JS__", COMMON_JS))
 
 CONSOLE_PAGE_HTML_BYTES = CONSOLE_PAGE_HTML.encode("utf-8")

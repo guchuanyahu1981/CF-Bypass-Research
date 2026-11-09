@@ -27,7 +27,7 @@ import corpus  # noqa: E402
 
 SKIP_REASON = (
     "corpus empty: no real session snapshot; "
-    "see plans/下一步改进指南.md §6 待授权清单"
+    "see 计划书/CF-Bypass-Research-项目总状态与待办清单.md §3.3 待授权清单"
 )
 
 #: stage2 的 6 类结构断言（名字 = manifest 断言矩阵的 key）

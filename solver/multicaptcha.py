@@ -29,8 +29,10 @@ from pathlib import Path
 
 try:
     from .errors import ErrorCode, SolveError
+    from .request import clamp_timeout as _clamp_timeout, host_of
 except ImportError:
     from errors import ErrorCode, SolveError  # type: ignore[no-redef]
+    from request import clamp_timeout as _clamp_timeout, host_of  # type: ignore[no-redef]
 
 log = logging.getLogger("multicaptcha")
 
@@ -345,3 +347,68 @@ def _t0_of(body: dict) -> float:
 def mark_start(body: dict) -> None:
     """在请求入口打时间戳，供 _normalize 计 elapsed。"""
     body["_t0"] = time.monotonic()
+
+
+def handle_compat_bypass(
+    body: dict,
+    *,
+    check_target,
+    entry_for,
+    clamp_timeout=None,
+) -> dict | None:
+    """`/solve` 入口的嫁接层旁路（v6.4 D2：自 `service.do_POST` 下沉，纯函数）。
+
+    为什么必须是纯函数：这段逻辑原来嵌在 `do_POST` 的 `try` 里，占 90 行、和 SSRF 守卫、
+    路由决策、后端调用混在同一个作用域 —— 既没法单独测边界，也没法说清"改一行会不会动到
+    主链路"。下沉之后它只依赖三个注入进来的能力，不碰 socket、不碰 handler 状态：
+
+      · `check_target(host)` —— 主链路的 SSRF 守卫（由 `Solver._check_target` 提供）；
+      · `entry_for(host)`    —— 该域粘住的出口（由 `Solver._entry_for` 提供），可返回 None；
+      · `clamp_timeout(t)`   —— 超时夹取（默认用 `request.clamp_timeout`）。
+
+    返回 `None` = 这条请求不属于嫁接层，调用方继续走主链路（行为与 v6.3 完全一致）；
+    返回 `dict` = 归一后的响应体，调用方只需 `_send(200, ...)` 加一行审计。
+    参数/目标不合法时抛 `SolveError`（错误码与主链路同一套）。
+    """
+    want = (body.get("want") or "").strip().lower()
+    if not is_multicaptcha_type(want):
+        return None
+
+    mc_body = dict(body)          # 不可变：不改调用方的 dict（它后面主链路还要用）
+    mc_body["type"] = want
+    url = mc_body.get("url") or ""
+    # 自带规范 URL 的类型（botguard/perimeterx/aliyun/arkose）允许省略 url
+    if url or want not in SELF_URL_TYPES:
+        if not isinstance(url, str) or not url.startswith(("http://", "https://")):
+            raise SolveError(ErrorCode.INVALID_REQUEST,
+                             "url 必须是 http(s) 绝对地址", stage="validate")
+        check_target(host_of(url))      # 同主链路的 SSRF 守卫
+    validate_request(mc_body)
+
+    # 出口粘性：cookie 类产物（DataDome/PerimeterX/Akamai/CF）**绑出口 IP**，
+    # 同一个域必须用同一个出口采集与回放。主链路由代理池保证这一点；
+    # 嫁接层若默认裸连，拿到的 cookie 在客户端换 IP 回放就是静默 403 ——
+    # 所以调用方没显式给 proxy 时，沿用主链路为该域粘住的出口。
+    entry = None
+    if not mc_body.get("proxy") and url:
+        entry = entry_for(host_of(url))
+        if entry is not None:
+            mc_body["proxy"] = entry.raw_url      # 含凭据，仅内存传递，不进日志
+
+    # 超时：主链路的 `timeout`（[5,120]）与扩展层的 `timeout_s` 都认，
+    # `timeout` 优先做夹取 —— 调用方不该为两套字段名记两份约定。
+    clamp = clamp_timeout or _clamp_timeout
+    timeout_s = 0.0
+    if mc_body.get("timeout") is not None:
+        timeout_s = clamp(mc_body.get("timeout"))
+    elif mc_body.get("timeout_s"):
+        timeout_s = mc_body.get("timeout_s")
+
+    mark_start(mc_body)
+    result = asyncio.run(solve_async(mc_body, timeout_s=timeout_s))
+    result["routed_by"] = {"mode": "multicaptcha", "backend": "captchas",
+                           "type": result.get("type")}
+    if entry is not None:
+        # 与主链路同一约定：出口标识回传，客户端回放必须用同一出口
+        result["egress_id"] = entry.egress_id
+    return result

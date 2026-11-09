@@ -75,18 +75,33 @@ const DOCS_FACTS = {
   python_coverage_percent: 50,
   go_tests: 7,
   findings: 2,
+  // v6.4 A1：模块级指标与单文件行数也进事实源，所以最小树里要有一份能被数出行的
+  // `solver/service.py`、以及文档里那两条锚点（L6 覆盖率 / L7 行数）。
+  module_coverage: { "solver/engines.py": 100 },
+  service_py_lines: 40,
 };
+
+/** 造一个恰好 `lines` 行的源文件（`service_py_lines` 就是按换行数出来的）。 */
+function sourceFileOfLines(lines) {
+  return `${Array.from({ length: lines }, (_, i) => `x${i} = ${i}`).join("\n")}\n`;
+}
 
 function docsTree(overrides = {}) {
   const facts = { ...DOCS_FACTS, ...overrides };
   return makeTree({
     "docs/facts.json": JSON.stringify(facts, null, 2),
     "docs/findings.json": JSON.stringify({ findings: [{ id: "F-001" }, { id: "F-002" }] }),
+    "solver/service.py": sourceFileOfLines(facts.service_py_lines),
+    "docs/项目规格.md":
+      "| L6 | `engines.py` 覆盖率 **100%**（x） | y | z |\n" +
+      `| L7 | \`service.py\` 仍 **${facts.service_py_lines} 行**（x） | y | z |\n`,
     "README.md": "跑测试：pytest tests/    # 100 项 Python 测试\n",
     "docs/00-索引.md":
       "离线：pytest tests/   100 项 Python 离线测试 + 7 项 Go 测试。\n" +
       "结论见 `docs/findings.json`（2 条，三态 verdict）。\n",
-    "test_ledger.md": "| Python 用例 | **100** | x |\n| Python 覆盖率 | **50%** | x |\n",
+    "test_ledger.md":
+      "| Python 用例 | **100** | x |\n| Python 覆盖率 | **50%** | x |\n" +
+      "| `solver/engines.py` 覆盖率 **100%** | ✅ | x |\n",
     "docker-compose.yml": "services:\n  s:\n    image: cf-bypass-solver:9.9.9\n",
     Dockerfile: "FROM python:3.12 # cf-bypass-solver:9.9.9\n",
     "CHANGELOG.md": "## [9.9.9] - 2026-01-01\n",
@@ -108,6 +123,27 @@ function selftestDocs() {
     { code: 1, contains: "python_tests" },
   );
   rmSync(drift, { recursive: true, force: true });
+
+  // v6.4 A1 的两条新规则（模块覆盖率 / 单文件行数）各自也要有一个负向样例 ——
+  // "加了规则但门禁自测没覆盖它"正是这个脚本要防的那类盲区。
+  const moduleDrift = docsTree({ module_coverage: { "solver/engines.py": 57 } });
+  expect(
+    "模块覆盖率写 57、文档写 100 → 红",
+    runGate("validate-docs.mjs", [`--root=${moduleDrift}`, "--no-test-run"]),
+    { code: 1, contains: "module_coverage" },
+  );
+  rmSync(moduleDrift, { recursive: true, force: true });
+
+  // 行数漂移的方向是"源码长长了、事实源没跟上"，所以这里改**源文件**而不是改文档：
+  // 只改文档的话，文档与事实源仍然一致，门禁本该绿（那种漂移由锚点规则自己抓）。
+  const linesDrift = docsTree();
+  writeFileSync(join(linesDrift, "solver", "service.py"), sourceFileOfLines(7), "utf8");
+  expect(
+    "源文件行数与事实源不一致 → 红",
+    runGate("validate-docs.mjs", [`--root=${linesDrift}`, "--no-test-run"]),
+    { code: 1, contains: "service_py_lines" },
+  );
+  rmSync(linesDrift, { recursive: true, force: true });
 
   const brokenAnchor = makeTree({
     "docs/facts.json": JSON.stringify(DOCS_FACTS),
@@ -175,6 +211,11 @@ function openapiPaths() {
 function openapiTree({ version = "9.9.9", paths = openapiPaths() } = {}) {
   return makeTree({
     "solver/service.py": OPENAPI_SOURCE,
+    // v6.4 C4：门禁还会核对"规格里的非 2xx 响应码 ⊆ STATUS_BY_CODE"，
+    // 所以最小树必须有一份能被提取的 errors.py（低于 8 个码会被判成"提取规则失效"）。
+    "solver/errors.py": `STATUS_BY_CODE = {\n${[400, 401, 404, 405, 413, 429, 500, 502, 503, 504]
+      .map((code) => `    CODE_${code}: ${code},`)
+      .join("\n")}\n}\n`,
     "docs/facts.json": JSON.stringify({ version: "9.9.9" }),
     "docs/openapi.json": JSON.stringify({
       openapi: "3.0.3",
@@ -219,6 +260,18 @@ function selftestOpenapi() {
     { code: 1, contains: "version" },
   );
   rmSync(t3, { recursive: true, force: true });
+
+  // v6.4 C4 的新规则：声明了一个 errors.py 根本不会产生的响应码 → 红。
+  // （对接方会为那条死分支写重试逻辑，比缺声明更难查。）
+  const badCode = openapiPaths();
+  badCode["/a"].get.responses = { 418: { description: "注入的幽灵响应码" } };
+  const t4 = openapiTree({ paths: badCode });
+  expect(
+    "规格声明了 STATUS_BY_CODE 不会产生的响应码 → 红",
+    runGate("validate-openapi.mjs", [`--root=${t4}`]),
+    { code: 1, contains: "418" },
+  );
+  rmSync(t4, { recursive: true, force: true });
 }
 
 // ── validate-findings ────────────────────────────────────

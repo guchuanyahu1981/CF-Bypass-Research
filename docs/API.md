@@ -4,9 +4,14 @@
 > 改接口时**两边都要改**（或用 `node scripts/validate-findings.mjs` 之后的手工复核兜住）。
 
 - Base URL：`http://127.0.0.1:8878`（默认只监听回环）
-- 认证：除 `GET /health` 外，全部端点要求 `Authorization: Bearer <token>`
+- 认证：除 `GET /health`、`GET /`（只读状态页）与 `OPTIONS`（只回 `Allow`）外，全部端点要求 `Authorization: Bearer <token>`
 - 内容类型：`application/json; charset=utf-8`
 - 协议：HTTP/1.1，支持 keep-alive
+- 方法语义：`HEAD` = `GET` 的头、没有 body；`OPTIONS` → `204` + `Allow`；
+  `PUT` / `DELETE` / `PATCH` / `TRACE` / `CONNECT` → `405` + `error_code=method-not-allowed` + `Allow`
+  （这些方法**可以带 body**：服务端会先把 body 读掉再回，所以同一条 keep-alive 连接
+  上的下一条请求不受影响）。
+  （**不是 501**：这是"该资源不支持这个方法"，不是"服务不认识这个方法"。）
 
 ## 认证
 
@@ -194,9 +199,11 @@ $TOKEN = (Select-String -Path .env -Pattern '^CF_SOLVE_TOKEN=(.+)$').Matches[0].
 | `error_code` | HTTP | `stage` | 含义与建议动作 |
 |---|---|---|---|
 | `invalid-request` | 400 | `validate` | url/timeout/force/body 不合法，**或页面重定向/子资源请求了私网地址被拦**；按 `hint` 修参数 |
-| `payload-too-large` | 413 | `validate` | **v5.0 新增**：请求体超过 `--max-body-bytes`（默认 65536 字节）。与 400 的区别：400=请求坏了**不该**重试，413=可减小请求体后**重试**（如拆分 URL 列表）。连接会被服务端主动关闭 |
+| `payload-too-large` | 413 | `validate` | **v5.0 新增**：请求体超过上限 **65536 字节**（编译期常量，没有可调启动参数）。与 400 的区别：400=请求坏了**不该**重试，413=可减小请求体后**重试**（如拆分 URL 列表）。连接会被服务端主动关闭 |
 | `unauthorized` | 401 | `admit` | 缺 token 或 token 错；检查 `.env` |
 | `busy` | 429 | `admit` | 队列满 / inflight 满；降低并发或加进程 |
+| `not-found` | 404 | `admit` | **v6.4 新增**：路径不存在。只在**已鉴权之后**才可能出现 —— 未带 token 时一律 401，不泄露"这个路径存不存在"。可用路径见本文目录 |
+| `method-not-allowed` | 405 | `admit` | **v6.4 新增**：该路径不支持这个方法，响应头带 `Allow`。此前是 501 + `text/html`（与"非 2xx 一律 JSON"的契约冲突，按契约解析的客户端会直接抛错） |
 | `rate-limited` | 429 | `admit` | 同域求解过频（预留，默认未启用） |
 | `unsolved` | **200** | `wait` | 浏览器跑完但没拿到 clearance；换站验证服务本身、或该域已升级 |
 | `timeout` | 504 | `wait` | 超过预算；调大 `timeout`（≤120）或降并发 |
@@ -526,7 +533,7 @@ POST /shutdown      Authorization: Bearer <token>
 
 YesCaptcha 生态的客户端**按 `errorId` 判断成败**，不看 HTTP 状态码。所以这两个端点的业务错误
 （含鉴权失败）统一返回 `200` + `errorId=1`，否则客户端会把它当网络错误无限重试。
-唯一例外是**传输层畸形**（body 不是 JSON、超过 `--max-body-bytes`）：那属于客户端 bug，
+唯一例外是**传输层畸形**（body 不是 JSON、超过 65536 字节上限）：那属于客户端 bug，
 仍按本服务既有约定返回 `400` / `413`。
 
 | `errorCode` | 触发 |
@@ -766,7 +773,11 @@ JSONL 或 `GET /logs`。
 ## 审计日志（`--audit-log`，v4.3）
 
 `--audit-log <path>` 开启 JSONL 审计：每次 `solve` / `detect` / `shutdown` 落一行。
-**字段白名单**：`event/req_id/host/ok/cached/elapsed/clearance_len/ms/error_code/stage/backend/route/reason/peer/ts`。
+**字段白名单**：`event/req_id/request_id/host/path/ok/cached/elapsed/clearance_len/ms/error_code/stage/backend/route/reason/peer/ts`。
+
+`/detect` 的行与 `/solve` 同族（`event=detect`、`host`、`ok`、`elapsed`/`ms`、`cached`、
+失败时还有 `error_code`/`stage`）。这条很关键：`/detect` 是本服务**唯一**"替调用方访问任意站点"
+的动作，没有它就回答不了"谁在哪一刻探测了哪个域"——而这正是取证与滥用排查的第一问。
 刻意**不含** clearance / token / cookies —— 审计回答"谁在什么时候打了哪个站、结果如何"，
 不回答"凭证是什么"。写盘失败只降级（打一条 `audit-write-failed` 到 stdout），**不会让请求失败**。
 轮转交给外部（logrotate / 容器日志驱动），服务内不做。

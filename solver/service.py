@@ -101,6 +101,7 @@ try:  # 作为包导入（tests / 未来 solver 包）
         MAX_URL_LEN,
         MIN_TIMEOUT,
         clamp_timeout,
+        host_of,
         parse_json_body,
         parse_solve_request,
     )
@@ -132,9 +133,8 @@ try:  # 作为包导入（tests / 未来 solver 包）
     # ── 万盾嫁接层（v6.1）：扩展 want 类型走 captchas/ 子包，CF 主线零感知 ──
     from .multicaptcha import (
         CAPTCHA_TYPES,
-        SELF_URL_TYPES as MC_SELF_URL_TYPES,
+        handle_compat_bypass as mc_handle_compat_bypass,
         inflight_tasks as mc_inflight_tasks,
-        is_multicaptcha_type,
         mark_start as mc_mark_start,
         solve_async as mc_solve_async,
         validate_request as mc_validate_request,
@@ -183,6 +183,7 @@ except ImportError:  # 直接以脚本运行：python solver/service.py
         MAX_URL_LEN,
         MIN_TIMEOUT,
         clamp_timeout,
+        host_of,
         parse_json_body,
         parse_solve_request,
     )
@@ -213,9 +214,8 @@ except ImportError:  # 直接以脚本运行：python solver/service.py
     )
     from multicaptcha import (  # type: ignore[no-redef]
         CAPTCHA_TYPES,
-        SELF_URL_TYPES as MC_SELF_URL_TYPES,
+        handle_compat_bypass as mc_handle_compat_bypass,
         inflight_tasks as mc_inflight_tasks,
-        is_multicaptcha_type,
         mark_start as mc_mark_start,
         solve_async as mc_solve_async,
         validate_request as mc_validate_request,
@@ -314,6 +314,11 @@ AUDIT_FIELDS = (
 #: 刻意不含引号/尖括号/控制字符 —— 头注入与日志注入的第一道防线。
 REQUEST_ID_RE = re.compile(r"[A-Za-z0-9_-]{1,64}")
 
+#: `Allow` 头（v6.4 C3）：本服务实现的方法集合。`OPTIONS` 与 `405` 都回它。
+#: 全路径同一组 —— 路径之间的差异只体现在"哪个方法真的处理这条路径"，而 404 已经
+#: 说明了这一点，不需要再为每个路径维护一份 Allow 清单（那份清单必然漂移）。
+ALLOW_HEADER = "GET, HEAD, OPTIONS, POST"
+
 
 def _sanitize_request_id(raw: str | None) -> str:
     """校验调用方的 X-Request-Id：合法（≤64 位白名单字符）则原样沿用，否则返回空串。"""
@@ -346,10 +351,9 @@ def _redact(text: str) -> str:
 
 
 def _host_of(url: str) -> str:
-    try:
-        return (urlsplit(url).hostname or "").lower()
-    except Exception:
-        return ""
+    """兼容旧名：实现已下沉到 `request.host_of`（v6.4 D2 —— 嫁接层旁路搬到
+    `multicaptcha.handle_compat_bypass` 后，两边都要算 host，不能各复制一份）。"""
+    return host_of(url)
 
 
 #: 兼容旧名：实现已下沉到 `request.clamp_timeout`（v5.0.1 D1），此处保留别名，
@@ -1712,7 +1716,7 @@ class Solver:
                         "corpus/INDEX.json 存在但 entries 为空：尚未归档任何会话快照"
                     )
         except FileNotFoundError:
-            notes.append("corpus empty: 需一次性抓取授权，见 plans/下一步改进指南.md §6")
+            notes.append("corpus empty: 需一次性抓取授权，见 计划书/CF-Bypass-Research-项目总状态与待办清单.md §3.3")
         except Exception as e:  # noqa: BLE001 —— 损坏的 INDEX 也只降级
             notes.append(f"INDEX.json unreadable: {type(e).__name__}")
         try:
@@ -2021,6 +2025,11 @@ class Handler(BaseHTTPRequestHandler):
     #: （`daemon_threads` 只影响退出，不影响运行期），长期跑会被慢客户端耗尽线程。
     timeout = 30
 
+    #: HEAD 请求只发响应头、不发 body（v6.4 C3）。`_write()` 是**唯一**的响应体出口，
+    #: 所以"HEAD 不写 body"只需要在这里判一次，不需要每个响应构造函数各改一遍。
+    #: 类属性默认 False：`Handler` 是每连接实例化一次，实例上赋值不会串到别的连接。
+    _head_only = False
+
     # -- 日志：JSON lines，不打 cookie / token --
     def log_message(self, fmt, *args):  # noqa: N802
         pass    # 统一走 _log()
@@ -2124,7 +2133,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Referrer-Policy", "no-referrer")
         self.send_header("X-Robots-Tag", "noindex, nofollow")
         self.end_headers()
-        self.wfile.write(body)
+        self._write(body)
 
     def _send_console_page(self) -> None:
         """T-78：回只读控制台。**带 token 鉴权**（与其它数据端点同门，与 `/` 不同）。
@@ -2147,9 +2156,9 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Referrer-Policy", "no-referrer")
         self.send_header("X-Robots-Tag", "noindex, nofollow")
         self.end_headers()
-        self.wfile.write(body)
+        self._write(body)
 
-    def _send(self, code: int, payload: dict) -> None:
+    def _send(self, code: int, payload: dict, *, headers: dict | None = None) -> None:
         # T-79：每个 JSON 出口都带 request_id —— 响应头与 envelope 同值。
         # 既有调用方不感知（只加不删，向后兼容）。
         request_id = getattr(self, "_request_id", "") or ""
@@ -2161,10 +2170,37 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         if request_id:
             self.send_header("X-Request-Id", request_id)
+        for name, value in (headers or {}).items():
+            self.send_header(str(name), str(value))
         self.end_headers()
-        self.wfile.write(body)
+        self._write(body)
         # 响应已经落地，这时再读残余才有意义（顺序反了会拖慢响应且照样 RST）。
         self._drain_after_response()
+
+    def _write(self, data: bytes) -> None:
+        """**唯一**的响应体出口。HEAD 时丢弃 body（头与 `Content-Length` 照发）。
+
+        为什么要收口：`HEAD` 的语义是"与 GET 完全相同的头，但没有体"。若在各处直接
+        `self.wfile.write`，要么每个响应构造函数都加一次判断（4 处，必然漏一处），
+        要么用"把 wfile 换成空 sink"的写法 —— 那会连响应头一起丢掉。
+        """
+        if self._head_only:
+            return
+        self.wfile.write(data)
+
+    def _send_not_found(self) -> None:
+        """统一的 404。此前是两处裸字面量 `"not-found"`（不在 `ErrorCode` 里，
+        文档与 openapi 也查不到），调用方只能靠猜这个码的含义。"""
+        self._send(
+            404,
+            {
+                "ok": False,
+                "error_code": ErrorCode.NOT_FOUND.value,
+                "error": "not found",
+                "stage": "admit",
+                "hint": "可用路径见 docs/API.md 的端点目录；GET / 是只读状态页",
+            },
+        )
 
     def _authorized(self) -> bool:
         """GET /health 公开（供容器健康检查），其余一律要求 Bearer token。"""
@@ -2214,6 +2250,62 @@ class Handler(BaseHTTPRequestHandler):
             },
         )
 
+    # -- 其它 HTTP 方法（v6.4 C3）----------------------------------
+    def do_HEAD(self):  # noqa: N802
+        """HEAD = GET 的头、没有 body。
+
+        实现方式是"关掉 body 写口后复用 `do_GET`"，而不是重写一遍路由：这样"哪些路径
+        存在、每个路径回什么头"永远与 GET 同源，不会出现"GET 加了端点、HEAD 忘了加"。
+        `/detect` 也照此走 —— 它同样受 token 与探测闸门约束，换方法不等于换权限。
+        """
+        self._head_only = True
+        try:
+            self.do_GET()
+        finally:
+            self._head_only = False
+
+    def do_OPTIONS(self):  # noqa: N802
+        """OPTIONS → 204 + `Allow`。**不需要 token**：不改状态、不发出站请求，
+        只回答"这个服务实现了哪些方法"（所有路径同一组方法）。
+
+        必须先把 body 读掉（`_read_body_raw`）：OPTIONS 可以带 body，不读就走，
+        残留字节会被 `http.server` 当成**下一条请求**的开头 —— 同一条 keep-alive
+        连接上的下一个请求会收到一个无关的 501 + HTML。这个坑与 `do_POST` 开头那条
+        同源，纪律也一致：**任何提前回响应的分支都要先处理 body**。
+        """
+        self._read_body_raw()
+        self.send_response(204)
+        self.send_header("Allow", ALLOW_HEADER)
+        # 204 不带 Content-Length：RFC 9110 §8.6 明确 MUST NOT（没有 body 就没有长度可声明）
+        self.end_headers()
+
+    def _unsupported_method(self) -> None:
+        """PUT / DELETE / PATCH / TRACE / CONNECT → 405 + JSON 体。
+
+        此前这些方法落到 `http.server` 的默认分支：**501 + `text/html`**。两处都不对：
+          · 违反全服务的响应契约（非 2xx 一律 `{ok, error_code, stage, hint}` JSON），
+            客户端按契约调 `r.json()` 会直接抛解析错误；
+          · 501 的含义是"服务不认识这个方法"，而这里的情况是"该资源不支持这个方法"，
+            正确状态是 405 + `Allow`。
+
+        body 必须先读掉（理由同 `do_OPTIONS`）：PUT/PATCH 带 JSON body 是 REST 的常规姿势，
+        不读就回，下一条请求会被残留字节顶歪（实测：PUT+body 后同连接的 GET 收到 501 HTML）。
+        """
+        self._read_body_raw()
+        self._send(
+            405,
+            {
+                "ok": False,
+                "error_code": ErrorCode.METHOD_NOT_ALLOWED.value,
+                "error": "method not allowed",
+                "stage": "admit",
+                "hint": f"本服务只接受 {ALLOW_HEADER}",
+            },
+            headers={"Allow": ALLOW_HEADER},   # RFC 9110：405 **应当**带 Allow
+        )
+
+    do_PUT = do_DELETE = do_PATCH = do_TRACE = do_CONNECT = _unsupported_method
+
     def do_GET(self):  # noqa: N802
         path = self.path.split("?", 1)[0]
         if path == "/":
@@ -2256,9 +2348,9 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
             self.send_header("Content-Length", str(len(text)))
             self.end_headers()
-            self.wfile.write(text)
+            self._write(text)
         else:
-            self._send(404, {"ok": False, "error_code": "not-found", "error": "not found", "stage": "admit"})
+            self._send_not_found()
 
     def do_POST(self):  # noqa: N802
         path = self.path.split("?", 1)[0]
@@ -2282,7 +2374,7 @@ class Handler(BaseHTTPRequestHandler):
             self._handle_detect(raw, body_error)
             return
         if path != "/solve":
-            self._send(404, {"ok": False, "error_code": "not-found", "error": "not found", "stage": "admit"})
+            self._send_not_found()
             return
 
         # 与 _track_inflight 分配的贯穿 ID 对齐：同一次请求只应有一个 req_id
@@ -2299,53 +2391,26 @@ class Handler(BaseHTTPRequestHandler):
         # 畸形输入恰恰是最需要审计的那一类，所以这里不是"兜个 None"而是修根。
         url = ""
         try:
-            # ── 万盾嫁接层旁路（v6.1）─────────────────────────────
-            # 放在 parse_solve_request **之前**：Want.parse 不认识扩展类型，
-            # 会先把它 400 掉。旁路逻辑：want 命中扩展类型（*_x / hcaptcha /
-            # datadome / ...）→ 不进主链路（backends/缓存/Solver 都不碰），
-            # 直接分发到 captchas/ 子包并归一响应。SSRF/目标检查同主链路。
-            _early = parse_json_body(raw) if not body_error else {}
+            # ── 万盾嫁接层旁路（v6.1；v6.4 D2 下沉到 multicaptcha）────────
+            # 放在 parse_solve_request **之前**：Want.parse 不认识扩展类型，会先把它 400 掉。
+            # 旁路实现见 `multicaptcha.handle_compat_bypass()`：want 命中扩展类型
+            # （*_x / hcaptcha / datadome / ...）→ 不进主链路（backends/缓存/Solver 都不碰），
+            # 直接分发到 captchas/ 子包并归一响应。SSRF/出口粘性由注入的两个回调保证。
             # body_error 不在这里处理：交给 parse_solve_request 按原契约报
             # （超大 body → 413，区别于 400），保持主链路行为逐字不变。
-            _mc_want = (_early.get("want") or "").strip().lower()
-            if is_multicaptcha_type(_mc_want):
-                mc_body = dict(_early)
-                mc_body["type"] = _mc_want
-                mc_url = mc_body.get("url") or ""
-                # 自带规范 URL 的类型（botguard/perimeterx/aliyun/arkose）允许省略 url
-                if mc_url or _mc_want not in MC_SELF_URL_TYPES:
-                    if not isinstance(mc_url, str) or not mc_url.startswith(("http://", "https://")):
-                        raise SolveError(ErrorCode.INVALID_REQUEST,
-                                         "url 必须是 http(s) 绝对地址", stage="validate")
-                    self.solver._check_target(_host_of(mc_url))     # 同主链路的 SSRF 守卫
-                mc_validate_request(mc_body)
-                # 出口粘性：cookie 类产物（DataDome/PerimeterX/Akamai/CF）**绑出口 IP**，
-                # 同一个域必须用同一个出口采集与回放。主链路由代理池保证这一点；
-                # 嫁接层若默认裸连，拿到的 cookie 在客户端换 IP 回放就是静默 403 ——
-                # 所以这里在调用方没显式给 proxy 时，沿用主链路为该域粘住的出口。
-                _mc_entry = None
-                if not mc_body.get("proxy") and mc_url:
-                    _mc_entry = self.solver._entry_for(_host_of(mc_url))
-                    if _mc_entry is not None:
-                        mc_body["proxy"] = _mc_entry.raw_url   # 含凭据，仅内存传递，不进日志
-                # 超时：主链路的 `timeout`（[5,120]）与扩展层的 `timeout_s` 都认，
-                # `timeout` 优先做夹取 —— 调用方不该为两套字段名记两份约定。
-                mc_timeout = 0
-                if mc_body.get("timeout") is not None:
-                    mc_timeout = _clamp_timeout(mc_body.get("timeout"))
-                elif mc_body.get("timeout_s"):
-                    mc_timeout = mc_body.get("timeout_s")
-                mc_mark_start(mc_body)
-                result = asyncio.run(mc_solve_async(mc_body, timeout_s=mc_timeout))
-                result["routed_by"] = {"mode": "multicaptcha", "backend": "captchas",
-                                       "type": result.get("type")}
-                if _mc_entry is not None:
-                    # 与主链路同一约定：出口标识回传，客户端回放必须用同一出口
-                    result["egress_id"] = _mc_entry.egress_id
-                self._send(200, result)
-                self._log(event="solve", req_id=req_id, host=_host_of(mc_url), path="/solve",
-                          ok=bool(result.get("solved")), elapsed=result.get("elapsed"),
-                          backend="captchas", type=result.get("type"),
+            _early = parse_json_body(raw) if not body_error else {}
+            _mc_result = mc_handle_compat_bypass(
+                _early,
+                check_target=self.solver._check_target,
+                entry_for=self.solver._entry_for,
+            )
+            if _mc_result is not None:
+                self._send(200, _mc_result)
+                self._log(event="solve", req_id=req_id,
+                          host=_host_of(str(_early.get("url") or "")), path="/solve",
+                          ok=bool(_mc_result.get("solved")),
+                          elapsed=_mc_result.get("elapsed"), backend="captchas",
+                          type=_mc_result.get("type"),
                           ms=round((time.monotonic() - started) * 1000))
                 return
 
@@ -2531,6 +2596,7 @@ class Handler(BaseHTTPRequestHandler):
         用途：先知道对面是什么（有没有盾、是哪种挑战），再决定走纯协议还是浏览器，
         避免把 16–20s 的求解浪费在"其实没盾/Akamai/DataDome"的站上。
         """
+        started = time.monotonic()   # 早退路径也要有真实耗时（审计里不许出现恒 0 的假值）
         try:
             if body_error:
                 if body_error.startswith("__payload_too_large__"):
@@ -2539,7 +2605,8 @@ class Handler(BaseHTTPRequestHandler):
                         ErrorCode.PAYLOAD_TOO_LARGE,
                         f"请求体超过 {MAX_BODY_BYTES} 字节",
                         stage="validate",
-                        hint=f"减小请求体到 {MAX_BODY_BYTES} 字节以内后重试；如需提高上限，启动时调 --max-body-bytes",
+                        hint=f"请求体上限固定为 {MAX_BODY_BYTES} 字节（没有可调参数）；"
+                             f"请减小请求体后重试",
                     )
                 raise SolveError(ErrorCode.INVALID_REQUEST, body_error, stage="validate")
             payload = Handler._parse_json(raw) if raw else {}
@@ -2548,10 +2615,16 @@ class Handler(BaseHTTPRequestHandler):
             return
         except SolveError as e:
             self._send(e.http_status, e.payload())
+            # 传输层/解析层失败也留审计：`/detect` 的每一次入站都要能在事后回答"谁探了哪"，
+            # 而"body 坏了"恰恰是最需要回溯的那一类（与 /solve 的早退路径同一纪律）。
+            self._log_detect("", ok=False, started=started,
+                             error_code=e.code.value, stage=e.stage)
         except Exception as e:  # noqa: BLE001
             self._log_internal(e)
             err = SolveError(ErrorCode.INTERNAL, f"{type(e).__name__}: {str(e)[:160]}", stage="internal")
             self._send(err.http_status, err.payload())
+            self._log_detect("", ok=False, started=started,
+                             error_code=err.code.value, stage="internal")
 
     def _probe_for_route(self, url: str, timeout) -> dict | None:
         """给 `route=auto` 做一次轻量探测；任何异常/闸门满一律返回 None（退回照常求解）。
@@ -2664,6 +2737,8 @@ class Handler(BaseHTTPRequestHandler):
           · **SSRF**：入口严格校验 + **每一跳重定向**用 `guard_hop` 复检。
         """
         got_slot = False
+        started = time.monotonic()
+        host = _host_of(url) if url else ""
         try:
             if not url:
                 raise SolveError(ErrorCode.INVALID_REQUEST, "缺少 url", stage="validate")
@@ -2679,6 +2754,7 @@ class Handler(BaseHTTPRequestHandler):
                 hit = self.solver.detect_cache_get(url)
                 if hit is not None:
                     self._send(200, hit)
+                    self._log_detect(host, ok=True, started=started, cached=True)
                     return
             if not self.solver.detect_inflight.acquire(blocking=False):
                 raise SolveError(
@@ -2693,15 +2769,47 @@ class Handler(BaseHTTPRequestHandler):
             )
             self.solver.detect_cache_put(url, result)      # T-34：按域短 TTL 缓存
             self._send(200, result)
+            self._log_detect(host, ok=True, started=started, cached=False)
         except SolveError as e:
             self._send(e.http_status, e.payload())
+            self._log_detect(host, ok=False, started=started,
+                             error_code=e.code.value, stage=e.stage)
         except Exception as e:  # noqa: BLE001
             self._log_internal(e)
             err = SolveError(ErrorCode.INTERNAL, f"{type(e).__name__}: {str(e)[:160]}", stage="internal")
             self._send(err.http_status, err.payload())
+            self._log_detect(host, ok=False, started=started,
+                             error_code=err.code.value, stage="internal")
         finally:
             if got_slot:
                 self.solver.detect_inflight.release()
+
+    def _log_detect(self, host: str, *, ok: bool, started: float,
+                    cached: bool | None = None,
+                    error_code: str | None = None, stage: str | None = None) -> None:
+        """`/detect` 的审计行（v6.4 C2）。
+
+        为什么必须写：`/detect` 是本服务**唯一**"替调用方访问任意站点"的动作。不写审计时，
+        事后完全无法回答"谁在哪一刻探测了哪个域"，而这正是取证与滥用排查的第一问。
+        字段与 `/solve` 同族（`host`/`stage`/`ok`/`elapsed`/`ms`），所以既有的审计消费方
+        不需要为它另写一套解析。
+        """
+        elapsed = time.monotonic() - started
+        fields: dict = {
+            "event": "detect",
+            "host": host,
+            "path": "/detect",
+            "ok": ok,
+            "elapsed": round(elapsed, 3),
+            "ms": round(elapsed * 1000),
+        }
+        if cached is not None:
+            fields["cached"] = cached
+        if error_code:
+            fields["error_code"] = error_code
+        if stage:
+            fields["stage"] = stage
+        self._log(**fields)
 
     def _read_body_raw(self) -> tuple[bytes, str]:
         """读请求体。返回 (bytes, 错误说明)；错误不抛异常，交由调用方决定状态码。"""

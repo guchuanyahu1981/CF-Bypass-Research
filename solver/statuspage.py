@@ -20,8 +20,10 @@
 from __future__ import annotations
 
 try:  # package import (python -m solver.service)
+    from ._page_common import COMMON_JS
     from .ui_tokens import TOKENS_CSS
 except ImportError:  # script import (python solver/service.py)
+    from _page_common import COMMON_JS
     from ui_tokens import TOKENS_CSS
 
 #: 页面单文件（HTML + CSS + JS）。刻意不用模板引擎、不用构建步骤。
@@ -131,7 +133,6 @@ __UI_TOKENS__
 <script>
 (function () {
   "use strict";
-  var TOKEN_KEY = "cfsolve_token";
   var stateEl = document.getElementById("state");
   var bannerEl = document.getElementById("banner");
   var healthEl = document.getElementById("health");
@@ -146,10 +147,10 @@ __UI_TOKENS__
   var autoBtn = document.getElementById("auto");
   var timer = null;
   var lastTotal = null;
-
-  function token() { return sessionStorage.getItem(TOKEN_KEY) || ""; }
-
   var lastOkAt = null;
+
+  __COMMON_JS__
+  bindPage({ state: stateEl, banner: bannerEl });
 
   function markStale(on) {
     Array.prototype.forEach.call(document.querySelectorAll("section.card"), function (card) {
@@ -167,46 +168,6 @@ __UI_TOKENS__
     });
   }
 
-  var bannerTimer = null;
-  function setBanner(msg, isError, autoHideMs) {
-    if (bannerTimer) { clearTimeout(bannerTimer); bannerTimer = null; }
-    if (!msg) { bannerEl.hidden = true; return; }
-    bannerEl.hidden = false;
-    bannerEl.textContent = msg;
-    bannerEl.className = isError ? "error" : "empty";
-    if (autoHideMs) {
-      bannerTimer = setTimeout(function () { bannerEl.hidden = true; }, autoHideMs);
-    }
-  }
-
-  function setState(text, cls) {
-    stateEl.textContent = text;
-    stateEl.className = "badge " + (cls || "");
-  }
-
-  function setKV(el, pairs) {
-    el.innerHTML = "";
-    el.className = "kv";      // 与 console 同源纪律：setKV 必须自己保证 class 正确
-    pairs.forEach(function (p) {
-      var dt = document.createElement("dt"); dt.textContent = p[0];
-      var dd = document.createElement("dd"); dd.textContent = p[1] == null ? "—" : String(p[1]);
-      if (p[2]) dd.className = p[2];
-      el.appendChild(dt); el.appendChild(dd);
-    });
-  }
-
-  function getJSON(path) {
-    var headers = {};
-    var t = token();
-    if (t) headers["Authorization"] = "Bearer " + t;
-    return fetch(path, { headers: headers, cache: "no-store" }).then(function (r) {
-      return r.text().then(function (text) {
-        var body;
-        try { body = text ? JSON.parse(text) : {}; } catch (e) { body = { raw: text }; }
-        return { status: r.status, body: body };
-      });
-    });
-  }
 
   function renderHealth(r) {
     var b = r.body || {};
@@ -250,7 +211,8 @@ __UI_TOKENS__
 
   function renderCaptchaTypes(b) {
     var list = Array.isArray(b.captcha_types) ? b.captcha_types : [];
-    if (!list.length) { setEmptyEl(chipsEl, "服务端未上报扩展类型（需要 token 查看）"); return; }
+    // 空态必须带上 chips class：这张卡用的是 flex 标签布局，丢了 class 就退回块级布局
+    if (!list.length) { setEmpty(chipsEl, "服务端未上报扩展类型（需要 token 查看）", "chips"); return; }
     chipsEl.className = "chips";
     chipsEl.innerHTML = "";
     list.forEach(function (t) {
@@ -262,13 +224,6 @@ __UI_TOKENS__
     });
   }
 
-  // 空的占位：class 由调用方给（扩展类型卡用 "chips empty"，出口卡用 "empty"），
-  // 硬编码成 chips 会把出口卡也套上 flex 布局（那个 class 是给标签列用的）。
-  function setEmptyEl(el, msg, cls) {
-    el.className = (cls || "chips") + " empty";
-    el.textContent = msg;
-  }
-
   // 出口区块（v6.3）。为什么值得单独一块：出口选错 = 凭证绑在别的 IP 上 = 静默 403，
   // 而"哪个在冷却、哪个没登记 IP"此前只能靠手打 /health | jq 才看得到。
   function renderProxies(b) {
@@ -277,14 +232,13 @@ __UI_TOKENS__
     //   ② 带 token 且确实没配 → 才是"未配置"
     //   ③ 带了 token 但服务端没这个字段（老版本）→ 说清楚版本不匹配
     if (b.backends === undefined) {
-      setEmptyEl(proxiesEl, "需要 token 才能看出口状态（/health 未鉴权时只回最小集）",
-                 "empty");
+      setEmpty(proxiesEl, "需要 token 才能看出口状态（/health 未鉴权时只回最小集）");
       return;
     }
     var pool = b.proxies;
     if (!pool) {
-      setEmptyEl(proxiesEl, "未配置代理池（启动时没有 --proxy）；本进程出口 = " +
-                            (b.egress_id || "default"), "empty");
+      setEmpty(proxiesEl, "未配置代理池（启动时没有 --proxy）；本进程出口 = " +
+                          (b.egress_id || "default"));
       return;
     }
     proxiesEl.className = "";
@@ -480,6 +434,8 @@ __UI_TOKENS__
 """
 
 #: 预计算长度：`_send_html` 要写 `Content-Length`，每次请求重新 encode 是浪费。
-STATUS_PAGE_HTML = STATUS_PAGE_HTML.replace("__UI_TOKENS__", TOKENS_CSS)
+STATUS_PAGE_HTML = (STATUS_PAGE_HTML
+                    .replace("__UI_TOKENS__", TOKENS_CSS)
+                    .replace("__COMMON_JS__", COMMON_JS))
 
 STATUS_PAGE_HTML_BYTES = STATUS_PAGE_HTML.encode("utf-8")

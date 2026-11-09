@@ -7,11 +7,15 @@
  * 删了个端点忘了删规格 → 对接方以为能用，实际 404。后者比前者更难查。
  * `docs/API.md`（28KB 散文）没法机器校验，但**路由集合**可以。
  *
- * 三条规则：
+ * 四条规则：
  *   1. 规格里声明的 `path + method` 必须与源码里实际出现的**完全一致**（双向比对）。
  *   2. 除 `/health`（容器探活）外，每个操作都必须继承全局 Bearer 鉴权
  *      —— 显式写 `"security": []` 就等于"我把这个端点开放了"，必须是有意为之。
  *   3. `info.version` 必须等于 `docs/facts.json` 的 version（与 validate-docs.mjs 同源）。
+ *   4. 每个操作声明的**非 2xx** 响应码必须 ⊆ `solver/errors.py` 的 `STATUS_BY_CODE`
+ *      （v6.4 C4）。反过来说：规格里写了一个服务端根本不会产生的码，对接方就会
+ *      为那条死分支写重试逻辑 —— 这类"看着像实现、其实永远不触发"的声明比缺声明更坏。
+ *      2xx 不参与：成功路径（200/202/204）不在错误码表里，它由各操作自己声明。
  *
  * 关于源码扫描的诚实说明：这里用正则从 `do_GET`/`do_POST` 里提取 `path == "/x"` 与
  * `path != "/x"`（后者是 `if path != "/solve"` 这种"剩下的都归它"的写法）。
@@ -40,6 +44,7 @@ function argValue(name, fallback) {
 const SPEC_PATH = resolve(ROOT, argValue("--spec", "docs/openapi.json"));
 const SRC_PATH = resolve(ROOT, "solver/service.py");
 const FACTS_PATH = resolve(ROOT, "docs/facts.json");
+const ERRORS_PATH = resolve(ROOT, "solver/errors.py");
 
 /**
  * 刻意公开（免鉴权）的端点。**加一条必须先想清楚"未鉴权可读的内容会不会泄露什么"**。
@@ -83,6 +88,22 @@ function extractRoutes(source) {
     }
   }
   return routes;
+}
+
+/**
+ * 从 `solver/errors.py` 的 `STATUS_BY_CODE` 里取"本服务实际会返回的 HTTP 状态码"。
+ *
+ * 为什么从源码取而不是在这里写死一份：写死的那份会与 `errors.py` 漂移，而漂移的
+ * 方向恰好是"门禁说可以、服务其实不给"—— 那正是这条规则要防的东西。
+ * 提取失败时返回 null，由调用方**报错**而不是当成"码变少了"（否则正则一失效，门禁静默通过）。
+ */
+function statusCodesFromSource() {
+  const src = readFileSync(ERRORS_PATH, "utf8");
+  const block = src.match(/STATUS_BY_CODE[^{]*\{([\s\S]*?)\n\}/);
+  if (!block) return null;
+  const codes = new Set();
+  for (const m of block[1].matchAll(/:\s*(\d{3})\s*,/g)) codes.add(Number(m[1]));
+  return codes;
 }
 
 function specRoutes(spec) {
@@ -185,6 +206,36 @@ function main() {
           "docs/openapi.json",
           `${upper} ${path} 被声明为免鉴权（"security": []）。本项目除 /health 外没有任何公开端点`,
         );
+      }
+    }
+  }
+
+  // ---- 规则 4：响应码 ⊆ STATUS_BY_CODE ----
+  const statusCodes = statusCodesFromSource();
+  if (!statusCodes || statusCodes.size < 8) {
+    problem(
+      "solver/errors.py",
+      `没能从 STATUS_BY_CODE 提取到状态码（提取到 ${statusCodes ? statusCodes.size : 0} 个）。` +
+        `提取规则失效时**必须报错**，不要当成"码变少了"`,
+    );
+  } else {
+    for (const [path, item] of Object.entries(spec.paths ?? {})) {
+      for (const [method, op] of Object.entries(item ?? {})) {
+        const upper = method.toUpperCase();
+        // HEAD/OPTIONS 是"GET 的头"与"204+Allow"，不走错误码表，直接跳过
+        if (upper !== "GET" && upper !== "POST") continue;
+        for (const code of Object.keys(op.responses ?? {})) {
+          // `4XX` / `default` 这类通配键不参与比对（它们本来就不是具体状态码）；
+          // 2xx 也不参与：成功路径不在错误码表里（`/shutdown` 的 202 就是这种）。
+          if (!/^\d{3}$/.test(code) || Number(code) < 400) continue;
+          if (!statusCodes.has(Number(code))) {
+            problem(
+              "docs/openapi.json",
+              `${upper} ${path} 声明了 ${code}，但 errors.py 的 STATUS_BY_CODE 不会产生这个码` +
+                `（对接方会为这条死分支写重试逻辑）`,
+            );
+          }
+        }
       }
     }
   }

@@ -177,6 +177,10 @@
       "min": 16,
       "why": "浏览器驱动主体（launch_async + 真实挑战页）不可离线执行；纯函数与包结构由 tests/test_captchas_offline.py 覆盖"
     },
+    "solver/_page_common.py": {
+      "min": 100,
+      "why": "两页共用的前端内核常量（v6.4 D1 去重）：模块体内只有字符串常量，没有分支；注入后的行为契约由 tests/test_statuspage.py 与 tests/test_console.py 逐条守住（setKV 还原 class / 无 innerHTML / getJSON 非 JSON 兜底）"
+    },
     "solver/auth.py": {
       "min": 85,
       "why": "凭证入口；T-82 起门槛 85%（并发首启竞态/追加/OSError 分支已由 tests/test_auth_probe_gaps.py 覆盖）"

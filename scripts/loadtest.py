@@ -17,7 +17,7 @@
 为什么用假服务而不是打真站：
   · 真站会消耗出口 IP 信誉（本项目最贵的资源），一次压测能把它打成"提分"；
   · 真站延迟不可控，测出来的是"CF 今天的心情"，不是本系统的能力；
-  · 真实端到端只有一种可信做法：拿 `plans/下一步改进指南.md` §15 的预算，按批次串行跑。
+  · 真实端到端只有一种可信做法：拿 `policy.md` §2 的预算，按批次串行跑。
 
 用法：
     python scripts/loadtest.py --mode hot   --workers 8 --duration 10
@@ -48,7 +48,7 @@ sys.path.insert(0, str(ROOT / "solver"))
 
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:156.0) Gecko/20100101 Firefox/156.0"
 
-#: 各模式的验收线（与 plans/下一步改进指南.md §5 的 SLO 对齐）
+#: 各模式的验收线（与 plans/archive/下一步改进指南-v3.0→v4.0-20261101.md §5 的 SLO 对齐）
 TARGETS = {
     "hot": {"qps": 50.0, "field": "qps", "desc": "稳态回放 ≥50 QPS（E2）"},
     "cold": {"accepted_ratio": 1.0, "field": "accepted_ratio", "desc": "冷路径不被拒（E1 机制）"},

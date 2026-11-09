@@ -1,6 +1,6 @@
 """hypothesis 性质测试（T-81）。
 
-两条性质（对应 plans/下一步改进指南.md T-81 的验收标准）：
+两条性质（对应 v6.0 T-81 的验收标准，已落地）：
 
 1. `/solve` 请求解析面：任意 bytes body / 任意 body_error 组合喂给
    `parse_solve_request`，**永不抛 SolveError 之外的异常** —— 只可能

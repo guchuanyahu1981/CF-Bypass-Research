@@ -2,8 +2,8 @@
   "openapi": "3.0.3",
   "info": {
     "title": "CF-Bypass-Research 求解服务",
-    "version": "6.3.2",
-    "description": "Cloudflare `cf_clearance` / Turnstile token / reCAPTCHA v3 / AWS WAF token 的获取与回放服务。\n\n**这份规格是手写的**（本项目不引入 FastAPI/pydantic，见 policy.md 的『零新依赖』），因此必须由 `scripts/validate-openapi.mjs` 反向核对：规格里声明的 `path + method` 必须与 `solver/service.py` 里实际存在的路由**完全一致**，多一个少一个都报错。\n\n约定：\n- 鉴权：`Authorization: Bearer <token>`；`/health` 免鉴权（容器探活）。\n- 错误响应体：2xx 读 `ok`，非 2xx 读 `error_code`（另有 `stage` / `hint` 供自动重试与自助修复）。\n- `POST /shutdown` 额外限制来源必须是回环地址（除非启动时加 `--allow-remote-shutdown`）。"
+    "version": "6.4.0",
+    "description": "Cloudflare `cf_clearance` / Turnstile token / reCAPTCHA v3 / AWS WAF token 的获取与回放服务。\n\n**这份规格是手写的**（本项目不引入 FastAPI/pydantic，见 policy.md 的『零新依赖』），因此必须由 `scripts/validate-openapi.mjs` 反向核对：规格里声明的 `path + method` 必须与 `solver/service.py` 里实际存在的路由**完全一致**，多一个少一个都报错。\n\n约定：\n- 鉴权：`Authorization: Bearer <token>`；`/health`（容器探活）、`GET /`（只读状态页）与 `OPTIONS`（只回 `Allow`）免鉴权。\n- 错误响应体：2xx 读 `ok`，非 2xx 读 `error_code`（另有 `stage` / `hint` 供自动重试与自助修复）。\n- `POST /shutdown` 额外限制来源必须是回环地址（除非启动时加 `--allow-remote-shutdown`）。\n\n方法语义（所有路径一致）：`HEAD` 等价于 `GET` 的头、无 body；`OPTIONS` → `204` + `Allow`；`PUT`/`DELETE`/`PATCH`/`TRACE`/`CONNECT` → `405` + `error_code=method-not-allowed` + `Allow`（不是 501：这是『该资源不支持这个方法』，不是『服务不认识这个方法』）。\n\n未知路径（不在本规格的 `paths` 里）→ `404` + `error_code=not-found`；未带 token 时一律先 `401`，不泄露『这个路径存不存在』。该响应属于**路由层**、对具体操作不可达，因此不逐操作声明 —— 声明在具体 `path` 下会让代码生成器产出一条永不触发的分支。"
   },
   "servers": [
     {
@@ -46,6 +46,8 @@
               "unauthorized",
               "rate-limited",
               "busy",
+              "not-found",
+              "method-not-allowed",
               "not-configured",
               "browser-unavailable",
               "timeout",
@@ -407,7 +409,7 @@
             }
           },
           "413": {
-            "description": "请求体超过 --max-body-bytes（可减小后重试）",
+            "description": "请求体超过 65536 字节上限（常量，无可调参数；可减小后重试）",
             "content": {
               "application/json": {
                 "schema": {
@@ -429,6 +431,78 @@
             "headers": {
               "X-Request-Id": {
                 "description": "请求级追踪标识（v6.0 T-79）。调用方带合法 X-Request-Id 则沿用，否则服务端生成 12 位 hex。",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "未预期异常（`error_code=internal`）；拿 `request_id` 去 `/logs` 查同 id 的 `internal` 事件",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-Id": {
+                "description": "请求追踪标识（v6.0 T-79）。调用方可自带 X-Request-Id（合法则沿用，否则新生成 12 位 hex）",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "网络层失败（`error_code=transport`）：DNS / 连接 / TLS",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-Id": {
+                "description": "请求追踪标识（v6.0 T-79）。调用方可自带 X-Request-Id（合法则沿用，否则新生成 12 位 hex）",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "后端未就绪或浏览器不可用（`error_code=not-configured` / `browser-unavailable`）；看 `/health` 的 `last_error`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-Id": {
+                "description": "请求追踪标识（v6.0 T-79）。调用方可自带 X-Request-Id（合法则沿用，否则新生成 12 位 hex）",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "超过本次求解预算（`error_code=timeout`）；调大 `timeout`（≤120）或降并发",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-Id": {
+                "description": "请求追踪标识（v6.0 T-79）。调用方可自带 X-Request-Id（合法则沿用，否则新生成 12 位 hex）",
                 "schema": {
                   "type": "string"
                 }
@@ -506,6 +580,60 @@
             "headers": {
               "X-Request-Id": {
                 "description": "请求级追踪标识（v6.0 T-79）。调用方带合法 X-Request-Id 则沿用，否则服务端生成 12 位 hex。",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "未预期异常（`error_code=internal`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-Id": {
+                "description": "请求追踪标识（v6.0 T-79）。调用方可自带 X-Request-Id（合法则沿用，否则新生成 12 位 hex）",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "探测所需资源不可用（`error_code=not-configured` / `browser-unavailable`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-Id": {
+                "description": "请求追踪标识（v6.0 T-79）。调用方可自带 X-Request-Id（合法则沿用，否则新生成 12 位 hex）",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "探测超时（`error_code=timeout`）：目标站响应太慢，或出口被限速",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-Id": {
+                "description": "请求追踪标识（v6.0 T-79）。调用方可自带 X-Request-Id（合法则沿用，否则新生成 12 位 hex）",
                 "schema": {
                   "type": "string"
                 }
@@ -590,6 +718,60 @@
             "headers": {
               "X-Request-Id": {
                 "description": "请求级追踪标识（v6.0 T-79）。调用方带合法 X-Request-Id 则沿用，否则服务端生成 12 位 hex。",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "未预期异常（`error_code=internal`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-Id": {
+                "description": "请求追踪标识（v6.0 T-79）。调用方可自带 X-Request-Id（合法则沿用，否则新生成 12 位 hex）",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "探测所需资源不可用（`error_code=not-configured` / `browser-unavailable`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-Id": {
+                "description": "请求追踪标识（v6.0 T-79）。调用方可自带 X-Request-Id（合法则沿用，否则新生成 12 位 hex）",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "探测超时（`error_code=timeout`）：目标站响应太慢，或出口被限速",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-Id": {
+                "description": "请求追踪标识（v6.0 T-79）。调用方可自带 X-Request-Id（合法则沿用，否则新生成 12 位 hex）",
                 "schema": {
                   "type": "string"
                 }

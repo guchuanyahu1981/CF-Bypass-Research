@@ -139,7 +139,7 @@ python scripts/ab_test.py --sites "https://a/,https://b/,https://c/" --gap 5
 
 `camoufox` 的 `geoip=True` 会调用 `download_mmdb()` **下载 GeoIP 数据库**（`geolocation.py`，
 落到 `user_cache_dir("camoufox")/geoip/mmdb/`）。这是运行期外部依赖 + 隐私面，
-按 `plans/下一步改进指南.md` §8 的规则**直接否决**，不做 A/B、保持 `geoip=False`。
+按 `计划书/CF-Bypass-Research-项目总状态与待办清单.md` §4.2 的 geoip 否决结论**直接否决**，不做 A/B、保持 `geoip=False`。
 要重开必须同时满足：①离线可用的 MMDB 供给方式 ②有实测收益（同站双臂）。
 
 ## 七、相关文档

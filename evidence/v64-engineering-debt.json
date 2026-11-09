@@ -1,0 +1,168 @@
+{
+  "task_id": "v6.4.0-engineering-debt",
+  "status": "done",
+  "timestamp": "2026-11-09T10:40:00+08:00",
+  "baseline_commit": "0ed810b",
+  "summary": "§3.1 工程待办 9 项 + §3.2 UI/UX 残留 5 项全部落地：/detect 审计、HTTP 方法语义（HEAD/OPTIONS/405/404）、ErrorCode 与 OpenAPI 补全、Go 客户端透传、两页前端内核去重、do_POST 嫁接层旁路下沉、模块级指标接入单一事实源。独立审查 1 P1 + 1 P2 + 6 P3 全部修复并补回归。",
+  "commands_executed": [
+    {
+      "cmd": "python -m pytest tests/ -q --cov=solver --cov=captchas --cov-report=json:coverage.json",
+      "exit_code": 0,
+      "raw_output_tail": "1058 passed, 7 skipped in 131.77s（收集 1065）"
+    },
+    {
+      "cmd": "node scripts/check-coverage.mjs --json=coverage.json",
+      "exit_code": 0,
+      "raw_output_tail": "solver/ 整体：89.92%（门禁 80%）/ captchas/ 整体：22.21%（门禁 20%）/ 65 个模块全部达到各自门禁"
+    },
+    {
+      "cmd": "cd gocfsolve && go test -race ./...",
+      "exit_code": 0,
+      "raw_output_tail": "ok github.com/lza6/CF-Bypass-Research/gocfsolve 8.430s（52 个 Test*）"
+    },
+    {
+      "cmd": "cd gocfsolve && go vet ./...",
+      "exit_code": 0,
+      "raw_output_tail": "（无输出）"
+    },
+    {
+      "cmd": "node scripts/gates.selftest.mjs",
+      "exit_code": 0,
+      "raw_output_tail": "21 条样例全部符合预期（该绿时绿、该红时红）"
+    },
+    {
+      "cmd": "node scripts/validate-docs.mjs --coverage-json=coverage.json",
+      "exit_code": 0,
+      "raw_output_tail": "12 处文档数字与事实源一致；负向注入（modules 57% / service.py 2073 行 / 未登记响应码 418）均 exit 1 并指名"
+    },
+    {
+      "cmd": "node scripts/validate-openapi.mjs",
+      "exit_code": 0,
+      "raw_output_tail": "14 个操作与源码一致，鉴权声明正确，version 与事实源一致"
+    },
+    {
+      "cmd": "node scripts/validate-findings.mjs",
+      "exit_code": 0,
+      "raw_output_tail": "结论 54 条（confirmed 47 / needs_validation 5 / rejected 2），全部结论都有可定位的证据"
+    },
+    {
+      "cmd": "python scripts/check_repo_hygiene.py",
+      "exit_code": 0,
+      "raw_output_tail": "[OK] 仓库干净：399 个跟踪文件中无运行产物"
+    },
+    {
+      "cmd": "CHROME_PATH=<chrome> python scripts/verify_ui_e2e.py",
+      "exit_code": 0,
+      "raw_output_tail": "RESULT: 35/35 通过（6 状态 × 两页 + 320/360 宽度 + 审计区块）"
+    },
+    {
+      "cmd": "SITE_ALLOW_PLACEHOLDER=1 npm run build（site/）",
+      "exit_code": 0,
+      "raw_output_tail": "✓ Compiled successfully；gen-og: zh.png/en.png；check-out OK: 12 indexable pages, 2 noindex, OG 1200x630"
+    },
+    {
+      "cmd": "npm run csp && npm run verify:csp（site/）",
+      "exit_code": 0,
+      "raw_output_tail": "inline script hashes: 20 / html files: 17 / CSP OK"
+    },
+    {
+      "cmd": "CHROME_PATH=<chrome> npm run verify:site（site/，先起本地 3100 预览）",
+      "exit_code": 0,
+      "raw_output_tail": "routes checked: 14 / axe violations: 0 / reduced-motion: static / webgl-disabled: static"
+    },
+    {
+      "cmd": "node --test tests/content/content.test.mjs（site/）",
+      "exit_code": 0,
+      "raw_output_tail": "pass 11 / fail 0"
+    },
+    {
+      "cmd": "python scripts/loadtest.py --mode hot --workers 8 --duration 10 --json",
+      "exit_code": 0,
+      "raw_output_tail": "requests=54846 errors=0 qps=5483.5 p50=1.38ms p90=2.19ms p99=3.14ms verdict=PASS"
+    },
+    {
+      "cmd": "python scripts/loadtest.py --mode cold --workers 32 --solve-delay 0.2 --json",
+      "exit_code": 0,
+      "raw_output_tail": "requests=32 accepted=32 rejected=0 solver_calls=32 wall=0.72s p99=715.58ms verdict=PASS"
+    },
+    {
+      "cmd": "python scripts/loadtest.py --mode share --processes 4 --iterations 3 --json",
+      "exit_code": 0,
+      "raw_output_tail": "sequential solves=3 hits=9 failures=0；burst solves=3 hits=9 verdict=PASS（多进程同域只解 1 次/轮）"
+    },
+    {
+      "cmd": "python -m pytest tests/test_service.py tests/test_governance.py tests/test_statuspage.py tests/test_console.py tests/test_request.py tests/test_multicaptcha.py tests/test_compat.py -q",
+      "exit_code": 0,
+      "raw_output_tail": "341 passed in 46.84s"
+    }
+  ],
+  "files_changed": [
+    "solver/service.py（/detect 审计、do_HEAD/do_OPTIONS/405、_write 收口、404 统一出口、_send(headers=)、host_of 别名）",
+    "solver/errors.py（NOT_FOUND / METHOD_NOT_ALLOWED + STATUS_BY_CODE）",
+    "solver/request.py（host_of 下沉、413 hint 去幻影参数）",
+    "solver/multicaptcha.py（handle_compat_bypass 纯函数）",
+    "solver/compat.py（新错误码补齐映射，保持表完整）",
+    "solver/_page_common.py（新增：两页共用前端内核）",
+    "solver/statuspage.py（注入 COMMON_JS、chips 空态 class）",
+    "solver/console_html.py（注入 COMMON_JS）",
+    "gocfsolve/cfsolve.go（SolveOptions / SolveWithOptions / Token / AWSWAFToken / 按 want 校验产物）",
+    "gocfsolve/cfsolve_test.go（+6 用例）",
+    "docs/API.md / docs/openapi.json / docs/项目规格.md / docs/facts.json / docs/coverage-policy.json / docs/00-索引.md / docs/对接-new-api.md",
+    "scripts/validate-docs.mjs / scripts/validate-openapi.mjs / scripts/gates.selftest.mjs",
+    "site/package.json（删死脚本 og）/ site/data/benchmarks.ts / site/content/site.ts",
+    "tests/test_service.py（+10）/ tests/test_governance.py（+3）/ tests/test_multicaptcha.py（+17）/ tests/test_request.py（+4）/ tests/test_detect_source.py（子进程 UTF-8）",
+    "CHANGELOG.md / README.md / test_ledger.md / 计划书/CF-Bypass-Research-项目总状态与待办清单.md"
+  ],
+  "tests": {
+    "added_python": 35,
+    "added_go": 6,
+    "total_python": 1065,
+    "total_go": 52,
+    "skipped": 7,
+    "named": [
+      {"name": "test_head_on_health_mirrors_get_without_body", "type": "integration", "status": "pass", "evidence": "HEAD 与 GET 的 Content-Type/Content-Length 逐一相等，body 为 0 字节"},
+      {"name": "test_head_does_not_desync_keep_alive", "type": "integration", "status": "pass", "evidence": "同 socket 连发 HEAD→GET→OPTIONS→GET，四个响应块状态码依次 200/200/204/200"},
+      {"name": "test_put_with_body_does_not_desync_keep_alive", "type": "regression", "status": "pass", "evidence": "独立审查实测的缺陷：PUT+body 后同连接 GET 曾收到 501 HTML；修复后为 405/200"},
+      {"name": "test_options_with_body_does_not_desync_keep_alive", "type": "regression", "status": "pass", "evidence": "同上，OPTIONS+body → 204/200"},
+      {"name": "test_unsupported_method_returns_405_json_not_html", "type": "contract", "status": "pass", "evidence": "PUT/DELETE/PATCH → 405 + error_code=method-not-allowed + Allow"},
+      {"name": "test_unknown_path_returns_not_found_code", "type": "contract", "status": "pass", "evidence": "404 + error_code=not-found，未鉴权时仍 401"},
+      {"name": "test_detect_is_audited / test_detect_cache_hit_is_audited_as_cached / test_detect_failure_is_audited", "type": "integration", "status": "pass", "evidence": "审计 JSONL 出现 event=detect，且 GET /audit 读得到"},
+      {"name": "handle_compat_bypass 纯函数 17 条", "type": "unit", "status": "pass", "evidence": "非扩展类型放行 / body 不可变 / SSRF 传小写 host / 出口粘性 / 显式 proxy 优先 / 超时夹取 / routed_by / 失败透传"},
+      {"name": "SolveWithOptions 3 条 + 产物解析 3 条（Go）", "type": "contract", "status": "pass", "evidence": "httptest 收实际请求体；turnstile→token、awswaf→aws_waf_token、产物缺失必须报错"},
+      {"name": "host_of 4 条", "type": "unit", "status": "pass", "evidence": "小写去端口 / 解析不出返回空 / 非字符串不抛 / IPv6 字面量去括号"}
+    ]
+  },
+  "coverage_summary": {
+    "solver_overall_percent": 89.92,
+    "captchas_overall_percent": 22.21,
+    "modules_gated": 65,
+    "modules_passing": 65,
+    "notable": {"solver/engines.py": 100.0, "solver/_page_common.py": 100.0, "solver/errors.py": 100.0, "solver/statuspage.py": 100.0, "solver/console_html.py": 100.0, "solver/request.py": 98.91, "solver/multicaptcha.py": 90.65, "solver/service.py": 85.31}
+  },
+  "seams_touched": [
+    "HTTP 层：do_GET/do_POST 分派、_send 出口、_write 唯一 body 口、_read_body_raw 与 keep-alive 的关系",
+    "错误契约：ErrorCode ↔ STATUS_BY_CODE ↔ openapi 响应码三段一致性（新门禁规则守护）",
+    "嫁接层：do_POST → multicaptcha.handle_compat_bypass（注入 check_target/entry_for）",
+    "前端：两个页面共享 COMMON_JS（无构建步骤，CSP 内联 hash 数量未变）",
+    "Go 客户端：/solve 请求体字段与响应产物字段（含 token 类）",
+    "门禁：validate-docs / validate-openapi / gates.selftest 的规则与自测样例"
+  ],
+  "mock_scenarios_covered": {
+    "note": "本轮没有新的外部付费/第三方依赖；压测三个模式按项目设计全部走本地假服务（loadtest.py 的 hot/cold/share 明确声明不打真实目标站，避免烧出口 IP 信誉）",
+    "loadtest_hot": "本地假目标站回放路径（连接复用/header 组装）",
+    "loadtest_cold": "本地可控延迟的假 /solve（准入与去重机制）",
+    "loadtest_share": "4 个真实子进程共用同一 SQLite/WAL 缓存目录"
+  },
+  "browser_validation": {
+    "ui_e2e": "35/35（真 Chrome，覆盖 ready/wedged/degraded/无 token/不可达/审计区块，含 320/360 宽度与自动刷新）",
+    "site_verify": "14 路由，axe 0，reduced-motion 与 no-WebGL 均降级为 static 档",
+    "artifacts": "plans/证据/ui-*.png、plans/证据/ui-v1/site-verify.json"
+  },
+  "limitations": [
+    "R-1/R-2/R-3 真机动作未执行：需要真实出站访问第三方站点并消耗真机预算（policy.md §2 台账 58/80），本轮不代跑；R-1 还缺 cloakbrowser 二进制（本机 import 失败）",
+    "D-1/D-2/D-3 未执行：按用户决定不做，所需凭证见计划书 §3.3（域名 + CLOUDFLARE_API_TOKEN/ACCOUNT_ID、三个搜索引擎账号、英文母语审校人）",
+    "生产部署未执行：本仓库没有生产主机与云凭证（test_ledger.md『真实生产部署：不适用』），部署步骤与回滚方式见 site/README.md 与 docs/部署-容器.md",
+    "do_POST 仍有 200 行（227→200），未达项目自定的 50 行标准；剩余部分是状态机本体（docs/项目规格.md L7 记为 P3）",
+    "CHANGELOG 里 v5.0 历史条目仍写着 --max-body-bytes（历史记录，不追改）"
+  ]
+}

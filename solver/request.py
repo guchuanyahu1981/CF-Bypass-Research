@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from urllib.parse import urlsplit
 
 try:  # 作为包导入（tests / solver 包）
     from .challenges import TOKEN_WANTS, Want
@@ -69,6 +70,19 @@ def clamp_timeout(value) -> float:
 _clamp_timeout = clamp_timeout
 
 
+def host_of(url: str) -> str:
+    """取 URL 的 host（小写）；解析不出来返回空串。
+
+    放在这里而不是 `service.py`：嫁接层旁路（`multicaptcha.handle_compat_bypass`）
+    也要用它，而 `multicaptcha` 不能反向 import `service`（会成环）。
+    两边各复制一份的话，"host 怎么算"就有了两个实现。
+    """
+    try:
+        return (urlsplit(url).hostname or "").lower()
+    except Exception:  # noqa: BLE001 —— 畸形 URL 一律当"没有 host"，由调用方报 400
+        return ""
+
+
 @dataclass(frozen=True)
 class SolveRequest:
     """一次 `/solve` 请求的规范化形态。
@@ -111,7 +125,8 @@ def parse_solve_request(raw: bytes, body_error: str = "") -> SolveRequest:
                 ErrorCode.PAYLOAD_TOO_LARGE,
                 f"请求体超过 {MAX_BODY_BYTES} 字节",
                 stage="validate",
-                hint=f"减小请求体到 {MAX_BODY_BYTES} 字节以内后重试；如需提高上限，启动时调 --max-body-bytes",
+                hint=f"请求体上限固定为 {MAX_BODY_BYTES} 字节（没有可调参数）；请减小请求体后重试，"
+                     f"例如把 URL 列表拆成多次请求",
             )
         raise SolveError(ErrorCode.INVALID_REQUEST, body_error, stage="validate")
 

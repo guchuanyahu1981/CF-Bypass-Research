@@ -975,3 +975,94 @@ def test_oversized_body_is_rejected_and_still_audited(live_audit):
         "超大 body 请求没有留下审计行"
     recs = _solve_audits(audit)
     assert recs and recs[-1]["error_code"] == "payload-too-large", recs
+
+
+# ── v6.4 C2：`/detect` 的审计 ────────────────────────
+def _post_detect(base, payload: dict):
+    """`/detect` 的 curl 等价物。`_post` 固定打 /solve，这里单开一个。"""
+    req = urllib.request.Request(
+        base + "/detect", data=json.dumps(payload).encode(),
+        headers={"Content-Type": "application/json", "Authorization": "Bearer t"}, method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=20) as r:
+            return r.status, json.loads(r.read().decode())
+    except urllib.error.HTTPError as e:
+        return e.code, json.loads(e.read().decode())
+
+
+def _detect_audits(audit):
+    recs = []
+    for line in audit.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        rec = json.loads(line)
+        if isinstance(rec, dict) and rec.get("event") == "detect":
+            recs.append(rec)
+    return recs
+
+
+def test_detect_is_audited(live_audit, monkeypatch):
+    """`/detect` 是本服务**唯一**替调用方访问任意站点的动作，必须能在事后回答
+    "谁在哪一刻探了哪个域"。此前它全程没有一行审计（v6.4 C2）。"""
+    base, audit = live_audit
+    monkeypatch.setattr(
+        svc, "probe_protection",
+        lambda url, timeout=15.0, guard=None, **kw: {
+            "url": url, "protected": True, "providers": [],
+            "recommendation": {"route": "cfsolve"},
+        },
+    )
+    code, body = _post_detect(base, {"url": HOST})
+    assert code == 200, (code, body)
+    assert wait_until(lambda: audit.exists() and "detect" in audit.read_text(encoding="utf-8")), \
+        "/detect 没有留下审计行"
+    recs = _detect_audits(audit)
+    assert recs, "审计里没有 event=detect"
+    rec = recs[-1]
+    assert rec["host"] == "example.com"
+    assert rec["path"] == "/detect"
+    assert rec["ok"] is True
+    assert rec["cached"] is False
+    assert isinstance(rec["ms"], int) and rec["ms"] >= 0
+
+    # 光落盘不够：`/audit` 必须读得到（否则运维还是得 ssh 上去 tail）。
+    def _detect_lines_via_audit_endpoint() -> bool:
+        req = urllib.request.Request(base + "/audit?lines=50")
+        req.add_header("Authorization", "Bearer t")
+        with urllib.request.urlopen(req, timeout=10) as r:
+            payload = json.loads(r.read().decode())
+        return any(isinstance(x, dict) and x.get("event") == "detect"
+                   for x in payload.get("lines", []))
+
+    assert wait_until(_detect_lines_via_audit_endpoint), "/audit 读不到 detect 那一行"
+
+
+def test_detect_cache_hit_is_audited_as_cached(live_audit, monkeypatch):
+    """命中按域探测缓存也要留一行（否则"探过没探过"永远说不清），并标 cached=true。"""
+    base, audit = live_audit
+    calls = {"n": 0}
+
+    def fake(url, timeout=15.0, guard=None, **kw):
+        calls["n"] += 1
+        return {"url": url, "protected": False, "providers": [], "recommendation": {"route": "skip"}}
+
+    monkeypatch.setattr(svc, "probe_protection", fake)
+    assert _post_detect(base, {"url": HOST})[0] == 200
+    assert _post_detect(base, {"url": HOST})[0] == 200
+    assert calls["n"] == 1, "第二次应当命中探测缓存"
+    assert wait_until(lambda: len(_detect_audits(audit)) >= 2 if audit.exists() else False), \
+        f"两次探测只有 {len(_detect_audits(audit)) if audit.exists() else 0} 条审计"
+    assert [r["cached"] for r in _detect_audits(audit)][:2] == [False, True]
+
+
+def test_detect_failure_is_audited(live_audit):
+    """探测失败（缺 url）同样要留审计行：失败恰恰是最需要回溯的那一类。"""
+    base, audit = live_audit
+    code, body = _post_detect(base, {})
+    assert code == 400 and body.get("error_code") == "invalid-request"
+    assert wait_until(lambda: audit.exists() and "detect" in audit.read_text(encoding="utf-8")), \
+        "失败的 /detect 没有留下审计行"
+    rec = _detect_audits(audit)[-1]
+    assert rec["ok"] is False and rec["error_code"] == "invalid-request"
+    assert rec["stage"] == "validate"

@@ -48,7 +48,7 @@ const COVERAGE_JSON = argValue("--coverage-json");
  * 文档位置 → 数字的映射表。
  *
  * 加一个新位置 = 加一条规则。**不要**把"历史轮次的数字"加进来：
- * 那些值本来就该停在当时（见 workflow_status.md 里标了 (v4.7 轮次) 的行）。
+ * 那些值本来就该停在当时（历史轮次的数字记录在 git 历史与 CHANGELOG 里，保持原值）。
  *
  * capture 是正则的第几个捕获组（从 1 开始）；一个正则里可以有多个规则共享一次匹配。
  */
@@ -62,6 +62,15 @@ const RULES = [
   { key: "version", file: "docker-compose.yml", re: /image:\s*cf-bypass-solver:(\d+\.\d+\.\d+)/, group: 1 },
   { key: "version", file: "Dockerfile", re: /cf-bypass-solver:(\d+\.\d+\.\d+)/, group: 1 },
   { key: "version", file: "CHANGELOG.md", re: /^## \[(\d+\.\d+\.\d+)\]/m, group: 1 },
+  // v6.4 A1：模块级指标进事实源。此前 `engines.py 覆盖率 57%` 与 `service.py 2073 行`
+  // 这两个数字**没有任何东西守着**，实测分别是 100% 与 2994 行 —— 漂了一整轮没被发现。
+  // 键名用点分路径（`module_coverage.<模块>`）指向嵌套对象，见 factAt()。
+  { key: "module_coverage.solver/engines.py", file: "docs/项目规格.md",
+    re: /\| L6 \| `engines\.py` 覆盖率 \*\*(\d+)%\*\*/, group: 1 },
+  { key: "service_py_lines", file: "docs/项目规格.md",
+    re: /\| L7 \| `service\.py` 仍 \*\*(\d+) 行\*\*/, group: 1 },
+  { key: "module_coverage.solver/engines.py", file: "test_ledger.md",
+    re: /\| `solver\/engines\.py` 覆盖率 \*\*(\d+)%\*\*/, group: 1 },
 ];
 
 /** version 是字符串（"5.0.0" 转 Number 会变 NaN），其余键是数字。 */
@@ -76,13 +85,40 @@ const STRING_KEYS = new Set(["version"]);
  * 拿它当跨平台硬等值门禁 → CI 必红，而且红得没有信息量。
  * 真正的覆盖率门禁在 `check-coverage.mjs`（逐模块下限 + 已留 floor 容差），这里只管"文档别写飞"。
  */
-const TOLERANCE = { python_coverage_percent: 2 };
+const TOLERANCE = {
+  python_coverage_percent: 2,
+  // 模块级覆盖率同样是平台相关的（同一个提交在 Windows 与 Linux 上实测差 1–2 点），
+  // 按顶层键匹配，所以 `module_coverage.*` 全都吃这条容差。
+  module_coverage: 2,
+};
+
+/**
+ * 按"顶层键 + 可选子键"从事实源里取值：
+ * `module_coverage.solver/engines.py` → facts.module_coverage["solver/engines.py"]。
+ *
+ * **只在第一个点处切一次** —— 子键本身可能含点（`engines.py`），按 `.` 全切会把它劈成
+ * `["module_coverage","solver/engines","py"]`，然后报"缺键"（这个坑真踩过）。
+ *
+ * 为什么允许嵌套：`module_coverage` 是"模块 → 覆盖率"的字典，天然会长出新条目；
+ * 拍平成 `engines_coverage` 这种键名的话，加第二个模块就要再发明一个键名。
+ */
+function factAt(facts, key) {
+  const dot = key.indexOf(".");
+  if (dot === -1) return facts[key];
+  const root = facts[key.slice(0, dot)];
+  return root == null ? undefined : root[key.slice(dot + 1)];
+}
+
+/** 容差按**顶层键**取（`module_coverage.*` 也该跟 `python_coverage_percent` 一样有容差）。 */
+function toleranceFor(key) {
+  const root = key.slice(0, key.indexOf(".") === -1 ? key.length : key.indexOf("."));
+  return TOLERANCE[root] ?? TOLERANCE[key] ?? 0;
+}
 
 function same(key, a, b) {
   if (a === undefined || b === undefined) return false;
   if (STRING_KEYS.has(key)) return String(a) === String(b);
-  const tol = TOLERANCE[key] ?? 0;
-  return Math.abs(Number(a) - Number(b)) <= tol;
+  return Math.abs(Number(a) - Number(b)) <= toleranceFor(key);
 }
 
 const problems = [];
@@ -138,6 +174,27 @@ function measure() {
           : (cov?.totals?.percent_covered ?? cov?.totals?.percent_covered_display);
         if (pct === undefined) problem("measure", `${COVERAGE_JSON} 里没有 totals.percent_covered`);
         else measured.python_coverage_percent = Math.round(Number(pct));
+
+        // 模块级覆盖率（v6.4 A1）：只测**事实源里已登记**的模块。
+        // `module_coverage` 的键就是"哪些模块的数字被文档引用"的清单 —— 把 60+ 个模块
+        // 全写进 facts.json 只会让它每天漂一次，而没人看那些数字。
+        const registry = Object.keys(readFacts().module_coverage ?? {});
+        if (registry.length) {
+          const byPath = new Map();
+          for (const [file, info] of Object.entries(cov?.files ?? {})) {
+            byPath.set(String(file).split("\\").join("/"), info);
+          }
+          const perModule = {};
+          for (const modulePath of registry) {
+            const hit = byPath.get(modulePath);
+            if (!hit) {
+              unmeasured.push(`module_coverage.${modulePath}`);
+              continue;
+            }
+            perModule[modulePath] = Math.round(Number(hit.summary?.percent_covered));
+          }
+          if (Object.keys(perModule).length) measured.module_coverage = perModule;
+        }
       } catch (e) {
         problem("measure", `${COVERAGE_JSON} 不是合法 JSON：${e.message}`);
       }
@@ -147,6 +204,15 @@ function measure() {
   if (!ranPytest && !NO_TEST_RUN && !measured.python_tests) {
     // pytest --collect-only 没给出数字（输出格式变化）：同样要显式记"未测量"
     unmeasured.push("python_tests");
+  }
+
+  // 单文件规模（v6.4 A1）：`service.py` 的行数是文档里写死的已知限制（L7），
+  // 必须能被核对 —— 否则"2329 → 2073"这种数字会一直停在很久以前的某一天。
+  try {
+    const py = readFileSync(resolve(ROOT, "solver/service.py"), "utf8");
+    measured.service_py_lines = py.split("\n").length - (py.endsWith("\n") ? 1 : 0);
+  } catch (e) {
+    problem("measure", `读 solver/service.py 失败（无法核实 service_py_lines）：${e.message}`);
   }
 
   // Go 用例数：只在 go 可用时测量（CI 的 go job 负责编译与 -race，这里只数用例）。
@@ -213,14 +279,14 @@ function checkDocs(facts) {
       continue;
     }
     const actual = STRING_KEYS.has(rule.key) ? m[rule.group] : Number(m[rule.group]);
-    const expected = facts[rule.key];
+    const expected = factAt(facts, rule.key);
     checked += 1;
     if (expected === undefined) {
       problem("facts", `facts.json 缺键 ${rule.key}`);
       continue;
     }
     if (!same(rule.key, actual, expected)) {
-      const tol = TOLERANCE[rule.key] ?? 0;
+      const tol = toleranceFor(rule.key);
       const hint = tol ? `（容差 ±${tol}）` : "";
       problem(rule.file, `${rule.key} 写成 ${actual}，事实源是 ${expected}${hint}`);
     }
@@ -253,6 +319,7 @@ function main() {
     // 但 version 例外：`git describe` 在"已提交但未打 tag"的提交上会给出**旧** tag，
     // 那不是漂移、是正常开发态。所以 version 不一致只警告，不判红（复审 MINOR-9）。
     for (const [k, v] of Object.entries(measured)) {
+      if (k === "module_coverage") continue;   // 嵌套对象逐模块比，见下
       if (facts[k] === undefined || same(k, facts[k], v)) continue;
       if (k === "version") {
         console.log(
@@ -263,10 +330,25 @@ function main() {
       }
       problem("facts", `${k} 实测 ${v}，facts.json 写的是 ${facts[k]}（先跑 --write）`);
     }
+    // 嵌套的模块级指标：逐模块比，才能指出"漂的是哪一个模块"（整体比较只会打印 [object Object]）。
+    for (const [modulePath, value] of Object.entries(measured.module_coverage ?? {})) {
+      const key = `module_coverage.${modulePath}`;
+      const known = factAt(facts, key);
+      if (!same(key, known, value)) {
+        problem("facts", `${key} 实测 ${value}，facts.json 写的是 ${known}（先跑 --write）`);
+      }
+    }
   }
 
   if (NO_TEST_RUN) unmeasured.push("python_tests");
-  if (!COVERAGE_JSON) unmeasured.push("python_coverage_percent");
+  if (!COVERAGE_JSON) {
+    unmeasured.push("python_coverage_percent");
+    // 模块级覆盖率的**唯一**来源也是那份 coverage json：没有它就不可能重测，
+    // 必须显式列出来，否则"跳过即通过"会让这条新规则长期空转（正是本脚本自己警告的坑）。
+    for (const modulePath of Object.keys(readFacts().module_coverage ?? {})) {
+      unmeasured.push(`module_coverage.${modulePath}`);
+    }
+  }
 
   // WRITE 模式下校验用**刚写进去的那份**（next），而不是 {...facts, ...measured} ——
   // 后者会让 measured.version（来自 git describe 的旧 tag）覆盖掉要校验的 version。

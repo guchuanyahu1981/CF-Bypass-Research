@@ -4,7 +4,7 @@
 检查 `git ls-files` 的输出：任何被跟踪的运行产物（缓存库 / 盐 / pid / 日志 /
 .env / __pycache__）都直接 exit 1，并打印应执行的 `git rm --cached` 命令。
 
-背景（plans/下一步改进指南.md T-69）：2026-11-03 之前 plans/证据/soak-run/
+背景（v6.0 T-69）：2026-11-03 之前 plans/证据/soak-run/
 跟踪过 7 个运行产物；它们既可再生，又让一次 `git add -A` 有带走 `.env`
 （含 CF_SOLVE_TOKEN）的风险。本脚本是防再犯的闸门，接进 run.ps1 verify 与 CI。
 

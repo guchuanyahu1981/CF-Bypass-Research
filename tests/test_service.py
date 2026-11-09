@@ -17,6 +17,7 @@ import sys
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -909,7 +910,7 @@ def test_oversized_body_finish_is_bounded(live_server):
     为什么单列一条：`Content-Length` 是**客户端声明**的，可以写 10GB。
       · 读干净 → 把"拒绝请求"变成"帮攻击者下载流量"（DoS 放大器）；
       · 一点不读 → 客户端还在写 body 时收到 RST，于是读不到 413
-        （实测约 1/30 抖动，见 workflow_status.md 批次 C 记录）；
+        （实测约 1/30 抖动，见 计划书/CF-Bypass-Research-项目总状态与待办清单.md §4.1）；
     正确解是有界读（`service.DRAIN_MAX_BYTES` / `DRAIN_TIMEOUT`）。本用例守它的两个边界：
     既要拿到 413，又要在秒级内收尾，不能把 handler 线程钉住。
     """
@@ -932,12 +933,14 @@ def test_oversized_body_finish_is_bounded(live_server):
     assert elapsed < 5.0, f"收尾耗时 {elapsed:.2f}s —— 有界收尾失效（要么读太多，要么没设短超时）"
 
 
-def test_oversized_body_hint_mentions_max_body_bytes(live_server):
-    """413 的 hint 必须可执行：告诉调用方阈值与解决方向。"""
+def test_oversized_body_hint_mentions_the_fixed_limit(live_server):
+    """413 的 hint 必须可执行：告诉调用方阈值与解决方向，且不指向不存在的启动参数。"""
     oversized = b'{"url":"' + b"a" * (service.MAX_BODY_BYTES + 1) + b'"}'
     status, body = _post(live_server, "/solve", oversized, token="test-token")
     assert status == 413
-    assert "--max-body-bytes" in body.get("hint", "")
+    hint = body.get("hint", "")
+    assert str(service.MAX_BODY_BYTES) in hint
+    assert "--max-body-bytes" not in hint
 
 
 # ── P2-9：未预期异常必须有结构化日志（req_id + path），且栈不外泄到 /logs ──
@@ -1108,3 +1111,207 @@ def test_oversized_body_larger_than_drain_still_returns_readable_413(live_server
     head = resp.split(CRLF, 1)[0]
     assert b"413" in head, f"没拿到 413（拿到的是 {head!r}）—— 说明响应被残余数据挤掉了"
     assert b"payload-too-large" in resp, f"413 的 body 不可读：{resp[:200]!r}"
+
+
+# ── v6.4 C3：方法语义（HEAD / OPTIONS / 405 / 404）───────────────
+def _request(base, method, path, token=None):
+    """任意方法的裸请求：返回 (status, headers, body_bytes)。"""
+    req = urllib.request.Request(f"{base}{path}", method=method)
+    if token:
+        req.add_header("Authorization", f"Bearer {token}")
+    try:
+        with urllib.request.urlopen(req, timeout=10) as r:
+            return r.status, dict(r.headers), r.read()
+    except urllib.error.HTTPError as e:
+        return e.code, dict(e.headers), e.read()
+
+
+def test_head_on_health_mirrors_get_without_body(live_server):
+    """HEAD = GET 的头、没有 body。头必须与 GET 同源（同一段代码算出来的）。"""
+    status, headers, body = _request(live_server, "HEAD", "/health")
+    assert status == 200 and body == b"", f"HEAD 不许带 body，实际 {body[:80]!r}"
+    get_status, get_headers, get_body = _request(live_server, "GET", "/health")
+    assert get_status == 200
+    assert headers["Content-Type"] == get_headers["Content-Type"]
+    assert int(headers["Content-Length"]) == len(get_body), \
+        "HEAD 的 Content-Length 必须是 GET 的 body 长度（否则调用方无法预判体积）"
+
+
+def test_head_on_status_page_has_no_body(live_server):
+    status, headers, body = _request(live_server, "HEAD", "/")
+    assert status == 200 and body == b""
+    _, _, get_body = _request(live_server, "GET", "/")
+    assert int(headers["Content-Length"]) == len(get_body)
+
+
+def test_head_on_unknown_path_is_404_json(live_server):
+    """HEAD 与 GET 同一套路由判定：带 token 的未知路径同样是 404（只是没有 body）。"""
+    status, _, body = _request(live_server, "HEAD", "/nope", token="test-token")
+    assert status == 404
+    assert body == b""
+
+
+def test_options_returns_204_with_allow(live_server):
+    """OPTIONS 不要 token：它不改状态、不发出站请求。"""
+    status, headers, body = _request(live_server, "OPTIONS", "/solve")
+    assert status == 204 and body == b""
+    allow = headers["Allow"]
+    assert {"GET", "HEAD", "OPTIONS", "POST"} <= {x.strip() for x in allow.split(",")}
+
+
+def test_unsupported_method_returns_405_json_not_html(live_server):
+    """PUT/DELETE 等此前落到 http.server 默认分支：501 + text/html，客户端按契约
+    调 `r.json()` 直接抛解析错误。现在必须是 405 + JSON + Allow。"""
+    for method in ("PUT", "DELETE", "PATCH"):
+        status, headers, body = _request(live_server, method, "/solve", token="test-token")
+        assert status == 405, f"{method} 应为 405，实际 {status}"
+        payload = json.loads(body.decode())
+        assert payload["ok"] is False
+        assert payload["error_code"] == "method-not-allowed"
+        assert payload["stage"] == "admit"
+        assert "Allow" in headers and "GET" in headers["Allow"]
+
+
+def test_unknown_path_returns_not_found_code(live_server):
+    """404 此前是裸字面量 `"not-found"`（不在 ErrorCode 里，文档与 openapi 都查不到）。"""
+    status, _, body = _request(live_server, "GET", "/nope", token="test-token")
+    assert status == 404
+    payload = json.loads(body.decode())
+    assert payload["error_code"] == ErrorCode.NOT_FOUND.value
+    assert payload["ok"] is False and payload["stage"] == "admit"
+
+
+def test_unknown_path_without_token_is_401_not_404(live_server):
+    """未鉴权时不泄露"这个路径存不存在"：先 401，再谈 404。"""
+    status, _, body = _request(live_server, "GET", "/nope")
+    assert status == 401
+    assert json.loads(body.decode())["error_code"] == "unauthorized"
+
+
+def test_head_does_not_desync_keep_alive(live_server):
+    """HEAD 之后同一条 keep-alive 连接上的下一条请求必须还能正常解析。
+
+    这是 HEAD 最经典的坏法：只要把 body 照写（或写了不写不一致），下一条响应
+    就会被前一条的残字节顶歪 —— 客户端看到的是"随机 400/连接重置"，而单发一条
+    HEAD 的用例全绿。所以这里在同一条 socket 上连发四条。
+    """
+    host, port = urllib.parse.urlsplit(live_server).hostname, urllib.parse.urlsplit(live_server).port
+    reqs = (
+        b"HEAD /health HTTP/1.1\r\nHost: x\r\n\r\n"
+        b"GET /health HTTP/1.1\r\nHost: x\r\n\r\n"
+        b"OPTIONS /solve HTTP/1.1\r\nHost: x\r\n\r\n"
+        b"GET /health HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n"
+    )
+    with socket.create_connection((host, port), timeout=10) as sock:
+        sock.sendall(reqs)
+        raw = b""
+        sock.settimeout(5)
+        while True:
+            try:
+                chunk = sock.recv(65536)
+            except (socket.timeout, OSError):
+                break
+            if not chunk:
+                break
+            raw += chunk
+    text = raw.decode(errors="replace")
+    statuses = [block.split("\r\n", 1)[0] for block in text.split("HTTP/1.1 ")[1:]]
+    assert len(statuses) == 4, f"响应块数不对（{len(statuses)}）：{text[:300]!r}"
+    assert statuses[0].startswith("200"), statuses
+    assert statuses[1].startswith("200"), statuses
+    assert statuses[2].startswith("204"), statuses
+    assert statuses[3].startswith("200"), statuses
+    # HEAD 与 OPTIONS 都不许带 body：紧跟其后的 body 只能是两条 GET 的
+    assert text.count('"state"') == 2, f"HEAD/OPTIONS 写了 body 或 GET 的 body 丢了：{text.count(chr(34)+'state'+chr(34))}"
+
+
+def test_put_with_body_does_not_desync_keep_alive(live_server):
+    """405/OPTIONS 必须先把 body 读掉再回包。
+
+    独立审查实测（v6.4 C3 引入的行为变化）：`PUT` 带 `Content-Length` 时旧 501 分支会
+    `Connection: close`，所以没人踩到；改成 405 之后不读 body 就回，残留字节被
+    `http.server` 当成下一条请求的开头 —— 同一条连接上的下一个 GET 会收到
+    `501 Unsupported method ('ABCDEFGHIJKLMNOPGET')` + text/html。
+    """
+    host, port = urllib.parse.urlsplit(live_server).hostname, urllib.parse.urlsplit(live_server).port
+    body = b'{"url":"https://example.com/"}'
+    head = (
+        b"PUT /solve HTTP/1.1\r\nHost: x\r\n"
+        b"Authorization: Bearer test-token\r\nContent-Type: application/json\r\n"
+        b"Content-Length: " + str(len(body)).encode() + b"\r\n\r\n"
+    )
+    with socket.create_connection((host, port), timeout=10) as sock:
+        sock.sendall(head + body + b"GET /health HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n")
+        raw = b""
+        sock.settimeout(5)
+        while True:
+            try:
+                chunk = sock.recv(65536)
+            except (socket.timeout, OSError):
+                break
+            if not chunk:
+                break
+            raw += chunk
+    text = raw.decode(errors="replace")
+    statuses = [b.split("\r\n", 1)[0] for b in text.split("HTTP/1.1 ")[1:]]
+    assert len(statuses) == 2, f"响应块数不对（{len(statuses)}）：{text[:300]!r}"
+    assert statuses[0].startswith("405"), statuses
+    assert statuses[1].startswith("200"), f"下一条请求被残留 body 顶歪了：{statuses}"
+
+
+def test_options_with_body_does_not_desync_keep_alive(live_server):
+    """OPTIONS 同理：带 body 的 OPTIONS 之后，同连接的请求必须仍能正常解析。"""
+    host, port = urllib.parse.urlsplit(live_server).hostname, urllib.parse.urlsplit(live_server).port
+    body = b"x" * 32
+    head = (
+        b"OPTIONS /solve HTTP/1.1\r\nHost: x\r\n"
+        b"Content-Length: " + str(len(body)).encode() + b"\r\n\r\n"
+    )
+    with socket.create_connection((host, port), timeout=10) as sock:
+        sock.sendall(head + body + b"GET /health HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n")
+        raw = b""
+        sock.settimeout(5)
+        while True:
+            try:
+                chunk = sock.recv(65536)
+            except (socket.timeout, OSError):
+                break
+            if not chunk:
+                break
+            raw += chunk
+    text = raw.decode(errors="replace")
+    statuses = [b.split("\r\n", 1)[0] for b in text.split("HTTP/1.1 ")[1:]]
+    assert len(statuses) == 2, f"响应块数不对（{len(statuses)}）：{text[:300]!r}"
+    assert statuses[0].startswith("204"), statuses
+    assert statuses[1].startswith("200"), f"下一条请求被残留 body 顶歪了：{statuses}"
+
+
+def test_options_has_no_content_length_and_connect_is_405(live_server):
+    """两条复审补充断言（v6.4 复审遗留）：
+
+    1. `204` 不许带 `Content-Length` —— RFC 9110 §8.6 对 204 是 MUST NOT。
+       实测时确实删过这一行，但没有断言守着，改回去没人会发现。
+    2. `CONNECT` 也必须回 405 + JSON（不能漏回 `http.server` 的 501 + text/html）。
+    """
+    host, port = urllib.parse.urlsplit(live_server).hostname, urllib.parse.urlsplit(live_server).port
+
+    with socket.create_connection((host, port), timeout=10) as sock:
+        sock.sendall(b"OPTIONS /solve HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n")
+        raw = b""
+        sock.settimeout(5)
+        while True:
+            try:
+                chunk = sock.recv(65536)
+            except (socket.timeout, OSError):
+                break
+            if not chunk:
+                break
+            raw += chunk
+    head = raw.decode(errors="replace").split("\r\n\r\n", 1)[0].lower()
+    assert "204 no content" in head, head[:120]
+    assert "content-length" not in head, f"204 不许带 Content-Length（RFC 9110 §8.6）：{head}"
+
+    status, headers, body = _request(live_server, "CONNECT", "/solve", token="test-token")
+    assert status == 405, status
+    assert "Allow" in headers
+    assert json.loads(body.decode())["error_code"] == "method-not-allowed"

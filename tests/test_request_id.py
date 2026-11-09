@@ -1,6 +1,6 @@
 """T-79：request_id 贯穿（一次求解可定位）。
 
-契约（plans/下一步改进指南.md T-78/T-79 系列）：
+契约（v6.0 T-78/T-79 系列，已落地）：
   · 入口生成 `rid = uuid4().hex[:12]`；调用方 `X-Request-Id` 合法（`[A-Za-z0-9_-]{1,64}`）则沿用，非法丢弃并新生成（不反射）
   · 出口三处都带：响应头 `X-Request-Id`、成功/错误 envelope 的 `request_id`、审计 JSONL 白名单列
   · `/solve` 的 `attempts` 每跳附 `rid`

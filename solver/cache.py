@@ -398,7 +398,7 @@ class SqliteStore:
         ⚠️ 诚实说明：这条竞态**没有**被用例确定性复现出来（同进程持锁、跨进程持锁、
         90 次裸构造都没稳定命中），所以回归用例只覆盖"重试逻辑本身"
         （`test_wal_switch_retries_when_database_is_locked`）。真实竞态靠降低概率 + 压力观察，
-        见 `workflow_status.md` §7 R13。
+        见 `计划书/CF-Bypass-Research-项目总状态与待办清单.md` §4.1 R13。
         """
         last = ""
         attempts = WAL_RETRY_ATTEMPTS if attempts is None else attempts

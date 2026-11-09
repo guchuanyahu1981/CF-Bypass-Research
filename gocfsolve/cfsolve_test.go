@@ -314,3 +314,150 @@ func TestCookieHeaderForErrorsWhenNoCookieMatchesHost(t *testing.T) {
 		t.Fatal("应当返回错误")
 	}
 }
+
+// ── v6.4 C5：want / route / sitekey 透传 ────────────────
+//
+// 断言的是**真实请求体**（httptest 收下来的 JSON），不是结构体字段：
+// 字段加了但没写进请求体的话，编译和"字段存在"的断言都会绿。
+
+func captureSolveBody(t *testing.T, calls *int32) (*httptest.Server, *map[string]any) {
+	t.Helper()
+	got := map[string]any{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(calls, 1)
+		raw := make([]byte, r.ContentLength)
+		_, _ = r.Body.Read(raw)
+		_ = json.Unmarshal(raw, &got)
+		w.Header().Set("Content-Type", "application/json")
+		body := okBody()
+		body["token"] = "TURNSTILE-TOKEN" // want=turnstile 的产物，见 cfsolve.go 的产物校验
+		_ = json.NewEncoder(w).Encode(body)
+	}))
+	return srv, &got
+}
+
+func TestSolveWithOptionsSendsWantRouteSitekey(t *testing.T) {
+	var calls int32
+	srv, got := captureSolveBody(t, &calls)
+	defer srv.Close()
+
+	cli := New(srv.URL, WithToken("test-token"))
+	_, err := cli.SolveWithOptions(context.Background(), "https://example.com/", SolveOptions{
+		Want:    "turnstile",
+		Route:   "auto",
+		Sitekey: "0x4AAAAAAA",
+	})
+	if err != nil {
+		t.Fatalf("SolveWithOptions 失败: %v", err)
+	}
+	body := *got
+	if body["want"] != "turnstile" {
+		t.Errorf("want 没有进请求体: %v", body)
+	}
+	if body["route"] != "auto" {
+		t.Errorf("route 没有进请求体: %v", body)
+	}
+	if body["sitekey"] != "0x4AAAAAAA" {
+		t.Errorf("sitekey 没有进请求体: %v", body)
+	}
+	if body["url"] != "https://example.com/" {
+		t.Errorf("url 丢了: %v", body)
+	}
+}
+
+func TestEmptySolveOptionsOmitFieldsFromJSON(t *testing.T) {
+	var calls int32
+	srv, got := captureSolveBody(t, &calls)
+	defer srv.Close()
+
+	cli := New(srv.URL, WithToken("test-token"))
+	if _, err := cli.Get(context.Background(), "https://example.com/"); err != nil {
+		t.Fatalf("Get 失败: %v", err)
+	}
+	body := *got
+	// Get 走默认语义：三个键必须**不存在**（omitempty），否则老服务端会收到陌生字段
+	for _, k := range []string{"want", "route", "sitekey"} {
+		if _, ok := body[k]; ok {
+			t.Errorf("默认请求不该带 %q: %v", k, body)
+		}
+	}
+}
+
+func TestSolveWithOptionsRejectsUnparsableTarget(t *testing.T) {
+	cli := New("http://127.0.0.1:1", WithToken("t"))
+	if _, err := cli.SolveWithOptions(context.Background(), "not a url", SolveOptions{}); err == nil {
+		t.Fatal("不可解析的目标应当直接报错，不发请求")
+	}
+}
+
+// ── P1 回归（独立审查）：非 clearance 产物的解析与校验 ──────────
+//
+// 修前：`solve()` 只认 `cf_clearance`，want=turnstile 明明拿到了 token 也直接报错，
+// 而 `SolveOptions.Want` 的注释正好承诺了这个用法。
+
+func TestSolveWithOptionsParsesTurnstileToken(t *testing.T) {
+	var calls int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&calls, 1)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"ok": true, "solved": true, "want": "turnstile",
+			"token": "TURNSTILE-TOKEN", "user_agent": testUA, "expires_in": 300,
+			"elapsed": 3.5, "egress_id": "default",
+		})
+	}))
+	defer srv.Close()
+
+	cli := New(srv.URL, WithToken("test-token"))
+	cl, err := cli.SolveWithOptions(context.Background(), "https://example.com/",
+		SolveOptions{Want: "turnstile", Sitekey: "0x4AAA"})
+	if err != nil {
+		t.Fatalf("want=turnstile 不该报错: %v", err)
+	}
+	if cl.Token != "TURNSTILE-TOKEN" {
+		t.Errorf("token 没解析出来: %+v", cl)
+	}
+	if cl.CFClearance != "" {
+		t.Errorf("token 类产物不该有 cf_clearance: %+v", cl)
+	}
+}
+
+func TestSolveWithOptionsParsesAWSWAFToken(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"ok": true, "solved": true, "aws_waf_token": "AWT-1", "expires_in": 300,
+		})
+	}))
+	defer srv.Close()
+
+	cli := New(srv.URL, WithToken("test-token"))
+	cl, err := cli.SolveWithOptions(context.Background(), "https://example.com/",
+		SolveOptions{Want: "awswaf"})
+	if err != nil {
+		t.Fatalf("want=awswaf 不该报错: %v", err)
+	}
+	if cl.AWSWAFToken != "AWT-1" {
+		t.Errorf("aws_waf_token 没解析出来: %+v", cl)
+	}
+}
+
+func TestSolveWithOptionsMissingProductStillFails(t *testing.T) {
+	// 服务端说 solved=true 但没给对应产物：必须报错，不能把空值当成功返回。
+	var calls int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&calls, 1)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "solved": true})
+	}))
+	defer srv.Close()
+
+	cli := New(srv.URL, WithToken("test-token"))
+	if _, err := cli.SolveWithOptions(context.Background(), "https://example.com/",
+		SolveOptions{Want: "turnstile"}); err == nil {
+		t.Fatal("缺 token 时必须报错")
+	}
+	if _, err := cli.Get(context.Background(), "https://example.com/"); err == nil {
+		t.Fatal("缺 cf_clearance 时必须报错（默认 want 行为不变）")
+	}
+}

@@ -169,14 +169,14 @@ def assertions_matrix(
         "strength": "literal-substring",
         "strength_note": (
             "断言为字面量子串存在性（如 'counter' in js），不是 AST 结构校验；"
-            "通过 ≠ 结构未变，只说明该标记仍出现。升级路径见 plans/下一步改进指南.md T-72"
+            "通过 ≠ 结构未变，只说明该标记仍出现。升级路径见 计划书/CF-Bypass-Research-项目总状态与待办清单.md §2.4（v6.0 T-72 已落地）"
         ),
         "assertions": list(all_names),
         "variants": variants,
         "totals": totals,
         "skip_reason": (
             "corpus empty: no real session snapshot; "
-            "see plans/下一步改进指南.md §6 待授权清单"
+            "see 计划书/CF-Bypass-Research-项目总状态与待办清单.md §3.3 待授权清单"
             if not entries else None
         ),
     }

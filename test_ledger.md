@@ -7,9 +7,9 @@
 
 | 层 | 数量 | 命令 | 最近结果 |
 |---|---|---|---|
-| Python 用例 | **1030** | `python -m pytest tests/ -q` | 1023 passed + 7 skipped |
+| Python 用例 | **1065** | `python -m pytest tests/ -q` | 1058 passed + 7 skipped |
 | Python 覆盖率 | **89%**（`solver/` 整体；`captchas/` 整体 22%，逐模块门禁见 `docs/coverage-policy.json`） | `... --cov=solver --cov=captchas --cov-report=json:coverage.json` + `node scripts/check-coverage.mjs` | solver 24 + captchas 40 模块门槛全通过 |
-| Go 用例 | **46 个 Test** | `cd gocfsolve && go test -count=1 -race ./...` | 全部 PASS |
+| Go 用例 | **52 个 Test** | `cd gocfsolve && go test -count=1 -race ./...` | 全部 PASS |
 | Go 静态检查 | — | `cd gocfsolve && go vet ./...` | 无输出 |
 | 结论库校验 | **54 条** | `node scripts/validate-findings.mjs` | exit 0 |
 | E2E 冒烟 | 3 个断言 | `.\run.ps1 smoke` | ✅ |
@@ -75,13 +75,13 @@
 | E5 worker 崩溃隔离时延 | ✅ 已闭环 | 摘除 **2s** / 回归 **28s**，其余节点全程 0 失败 |
 | A3 稳态命中率 ≥95% | ⚠️ 部分 | 需真实站点 + 保活长跑（受真机预算约束）；离线侧只证明"缓存命中不重复求解" |
 | G1 真实 CF 站路由收益 | ⚠️ 部分 | 真机已验证 3 站：udemy 6.9s / canva 4.7s / g2 reject 1.3s；**同站双臂 A/B 未做**（预算） |
-| `solver/engines.py` 覆盖率 57% | ⚠️ 记录 | cloakbrowser 二进制专有、本机未装；只能测到"缺依赖即失败"分支 |
+| `solver/engines.py` 覆盖率 **100%** | ✅ 已闭环（覆盖率） | 覆盖的是引擎装配与"缺依赖即 NOT_CONFIGURED"的全部分支（替身工厂）；cloakbrowser 二进制专有、本机未装，**真机能过盾仍属待授权项** |
 | 真实生产部署 | ❌ 不适用 | 本仓库无生产环境/云凭证。"部署"= 本机多进程 / compose 滚动，已用 `hot_update_drill.py` 量化 |
 
 ## 4. 纪律
 
 1. 上表"pass"只代表**本轮实际跑过并通过**，改代码后必须重跑对应层。
-2. 新增验收项必须同时新增用例，否则在 `workflow_status.md` 里标 `TODO` 而不是"完成"。
+2. 新增验收项必须同时新增用例，否则在 `计划书/CF-Bypass-Research-项目总状态与待办清单.md` 里标 `TODO` 而不是"完成"。
 3. 不许为了让门禁变绿而放宽断言；发现断言与实现矛盾时，**先判断谁错**（本轮 `TestPoolDo403*` 就是一次真实的口径冲突，最终以"403 不 blame 节点 + 清该域凭证"定稿）。
 4. **in-process 用例证明不了"真进程交付链路"**：起进程、读 `.env`、401 体、`/metrics` 的 content-type、
    `202` 之后进程是否真退出、退出码、审计文件里有没有混入凭证 —— 这些只有 `scripts/e2e_local.py` 覆盖。
@@ -98,5 +98,5 @@
 | 流量录制（真浏览器） | `python scripts/record_traffic.py --real` | 本机 chromium × 本地站，预算 1/2/3/5/6 各档严格 | `<out>/manifest.json` |
 | 真实代码复审 | `claude -p` 独立进程 | 4 条真缺陷（1×P1 / 2×P2 / 1×P3）全部修复 | `plans/证据/independent-review-v6.3-r1.md` |
 
-> 这四类在 v5.0.1 是**人工跑一次**写进 `workflow_status.md` 的 —— 证明过当时那一刻，但不可复跑。
+> 这四类在 v5.0.1 是**人工跑一次**写进当时状态台账的（该台账已并入 git 历史）—— 证明过当时那一刻，但不可复跑。
 > v6.2 起全部脚本化，`run.py` 一个命令就能重来。

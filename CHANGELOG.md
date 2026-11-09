@@ -1,3 +1,41 @@
+## [6.4.0] - 2026-11-09
+
+主题：**工程债清零**。工程待办 9 项与 UI/UX 残留 5 项全部落地，对外契约补上此前缺失的两类响应。
+
+### 变更
+
+- **`/detect` 有了审计**：此前这个"替调用方访问任意站点"的动作一行审计都不留，事后回答不了
+  "谁在哪一刻探了哪个域"。现在成功 / 缓存命中 / 失败各落一行（`event=detect`），字段与 `/solve` 同族。
+- **HTTP 方法语义补齐**：`HEAD` = `GET` 的头、无 body；`OPTIONS` → `204` + `Allow`；
+  `PUT`/`DELETE`/`PATCH`/`TRACE` → **405 + JSON + `Allow`**（原先是 `http.server` 的默认分支
+  501 + `text/html`，与"非 2xx 一律 `{ok,error_code,stage,hint}`"的契约冲突）。
+  响应体写口收口到 `Handler._write()`，HEAD 不写 body 只在这里判一次。
+- **错误码补两个**：`not-found`(404) / `method-not-allowed`(405) 进 `ErrorCode` 与
+  `STATUS_BY_CODE`；两处 `"not-found"` 裸字面量改为统一出口，`docs/API.md` 与 `openapi.json` 同步。
+- **`openapi.json` 补服务端错误分支**：`/solve` 的 500/502/503/504、`/detect` 的 500/503/504、
+  12 个已鉴权操作的 404。`validate-openapi.mjs` 新增"非 2xx 响应码 ⊆ `STATUS_BY_CODE`"，
+  码表从 `errors.py` 正则提取（提取失败即报错，不静默通过）。
+- **幻影参数清理**：413 的 `hint` 曾指向从未实现的 `--max-body-bytes`，照提示操作会让
+  argparse 直接退出。改为"上限固定 65536 字节（没有可调参数）"，文档与 openapi 描述同步。
+- **Go 客户端补 `want`/`route`/`sitekey` 透传**：新增 `SolveOptions` 与 `SolveWithOptions()`；
+  三个字段 `omitempty`，省略时请求体与旧客户端逐字节一致。`SolveWithOptions` 刻意不碰本地缓存
+  —— 缓存键的前提是产物恒为 `cf_clearance`，而 token 类产物是一次性的。
+- **两页公共 JS 去重**：新增 `solver/_page_common.py`，`/` 与 `/console` 共用
+  `token`/`getJSON`/`setKV`/`setBanner`/`setState`/`setEmpty`。顺带修掉两份副本已经漂移的行为：
+  `getJSON` 统一到 text+parse（非 JSON body 也能显示原文），`setKV` 统一到 `removeChild`
+  （符合控制台"禁 innerHTML"的硬约束）。
+- **`do_POST` 下沉嫁接层旁路**：约 60 行搬到 `multicaptcha.handle_compat_bypass()`（纯函数，
+  注入 `check_target`/`entry_for`），`do_POST` 227 → 200 行。剩下的部分是状态机本体，按 P3 不拆。
+- **文档数字进事实源**：`docs/facts.json` 增 `module_coverage` 与 `service_py_lines`，
+  `validate-docs.mjs` 增 3 条锚点规则；`engines.py 57%`、`service.py 2073 行` 两处陈年漂移清零
+  （实测 100% / 2994 行）。
+- 删除死 npm 脚本 `og`、`site/` 下三个空目录；证据 README 的 CI run 号更新为 v6.3.2 的两个。
+
+### 验证
+
+Python 1058 passed / 7 skipped、覆盖率 `solver/` 89.94%（65 模块全部达标）、
+Go 52 个 `Test*` 全绿、门禁自测 21/21、两页真浏览器 E2E 35/35、站点 content 11/11。
+
 ## [6.3.2] - 2026-11-08
 
 主题：**独立审查发现的三处真缺陷，以及它们暴露出的门禁盲区。**

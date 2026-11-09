@@ -136,6 +136,16 @@ func forward(r *http.Request) (*http.Response, error) {
 
 > 我们已有 Go 客户端 `gocfsolve`（`Get` / `DoWith` / `CookieHeaderFor` / `Pool`），
 > 薄代理直接 import 它即可，**不用自己写解析**：`gocfsolve.New(baseURL, WithToken(tok))`。
+>
+> 需要 `want` / `route` / `sitekey` 时用 `SolveWithOptions(ctx, url, SolveOptions{...})`：
+> 三个字段原样进 `/solve` 的请求体（留空时请求与 `Get` 完全一致）。它**不碰本地缓存**
+> 也不参与单飞 —— 本地缓存的键是"域 + 出口"，前提是产物恒为 `cf_clearance`；
+> 而 `want=turnstile` 之类的产物是**一次性 token**，混进同一个键会让后续 `Get`
+> 拿到一个不是 clearance 的东西，且整个 TTL 内不会自愈。
+>
+> 产物字段随 `want` 变（与服务端 `RESULT_FIELD` 一致）：`clearance` → `Clearance.CFClearance`、
+> `turnstile`/`recaptcha_v3` → `Clearance.Token`、`awswaf` → `Clearance.AWSWAFToken`。
+> 拿错字段会得到空串而不是报错，所以取之前先确认自己传的 `Want`。
 
 ### 方案 B：new-api 支持"前置脚本/自定义 header"时，直接调 /solve
 

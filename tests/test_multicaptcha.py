@@ -700,3 +700,190 @@ def test_looplock_serializes_within_one_loop():
     # 串行：a 完全结束后 b 才开始（若锁释放错误会交错）
     assert order == [("in", "a"), ("out", "a"), ("in", "b"), ("out", "b")], order
     assert lock.locked() is False, "退出后锁必须释放，否则后续请求永远排队"
+
+
+# ── D2：旁路下沉为纯函数后的契约（v6.4）──────────────────────
+#
+# 这些用例打的是 `handle_compat_bypass()` 本身的边界，而不是 HTTP 层：
+# 它原来嵌在 `do_POST` 的 try 里，90 行、与 SSRF/路由/后端共用一个作用域，
+# 边界只能靠起真实服务才能测。下沉之后每个分支都能直接钉住。
+
+class _Entry:
+    """`Solver._entry_for` 的返回形状（只要 raw_url 与 egress_id 两个属性）。"""
+
+    def __init__(self, egress_id="eg-1", raw_url="http://user:pw@10.0.0.1:8080"):
+        self.egress_id = egress_id
+        self.raw_url = raw_url
+
+
+@pytest.fixture()
+def bypass(monkeypatch):
+    """把 `solve_async` 换成录制器；返回 (call, recorded, guard_calls, entry_calls)。"""
+    rec: dict = {"solves": 0}
+    guards: list[str] = []
+    entries: list[str] = []
+    entry_holder: dict = {"entry": None}
+
+    async def fake_solve(body, timeout_s=0):
+        rec["solves"] += 1
+        rec["body"] = body
+        rec["timeout_s"] = timeout_s
+        return {"type": body.get("type"), "token": "TOKEN", "solved": True}
+
+    def fake_check_target(host):
+        guards.append(host)
+
+    def fake_entry_for(host):
+        entries.append(host)
+        return entry_holder["entry"]
+
+    monkeypatch.setattr(mc, "solve_async", fake_solve)
+
+    def call(body):
+        return mc.handle_compat_bypass(body, check_target=fake_check_target,
+                                       entry_for=fake_entry_for)
+
+    return call, rec, guards, entries, entry_holder
+
+
+def test_bypass_returns_none_for_main_chain_want(bypass):
+    """want 不属于扩展类型时必须原样放行（返回 None），且一次求解都不发起。"""
+    call, rec, guards, _, _ = bypass
+    assert call({"url": "https://a.test/", "want": "clearance"}) is None
+    assert call({"url": "https://a.test/", "want": "turnstile", "sitekey": "k"}) is None
+    assert rec["solves"] == 0 and guards == []
+
+
+def test_bypass_normalizes_want_and_sets_type(bypass):
+    """`want` 大小写/空白不该影响判定；`type` 用归一后的值传给求解器。"""
+    call, rec, _, _, _ = bypass
+    out = call({"url": "https://a.test/", "want": "  Datadome  "})
+    assert out is not None and rec["body"]["type"] == "datadome"
+
+
+def test_bypass_does_not_mutate_caller_body(bypass):
+    """调用方的 dict 必须原样不动 —— 主链路后面还要用它（`_early` 是同一个对象）。"""
+    call, rec, _, _, _ = bypass
+    body = {"url": "https://a.test/", "want": "datadome", "timeout": 30}
+    snapshot = dict(body)
+    call(body)
+    assert body == snapshot, f"旁路就地改了调用方的 body：{body}"
+    assert "_t0" in rec["body"] and "type" in rec["body"]
+
+
+def test_bypass_rejects_non_http_url(bypass):
+    call, rec, _, _, _ = bypass
+    with pytest.raises(SolveError) as ei:
+        call({"url": "ftp://a.test/x", "want": "datadome"})
+    assert ei.value.code is ErrorCode.INVALID_REQUEST and ei.value.stage == "validate"
+    assert rec["solves"] == 0
+
+
+def test_bypass_requires_url_for_page_level_types(bypass):
+    call, _, _, _, _ = bypass
+    with pytest.raises(SolveError) as ei:
+        call({"want": "datadome"})
+    assert ei.value.code is ErrorCode.INVALID_REQUEST
+
+
+def test_bypass_allows_missing_url_for_self_url_types(bypass):
+    """botguard/perimeterx/aliyun/arkose 自带规范 URL：省略 url 合法，且**不**做 SSRF 检查。"""
+    call, rec, guards, entries, _ = bypass
+    out = call({"want": "aliyun", "scene_id": "s", "prefix": "p"})
+    assert out is not None and rec["solves"] == 1
+    assert guards == [], "没有 url 就没有 host 可查，不许拿空 host 去打守卫"
+    assert entries == []
+
+
+def test_bypass_calls_check_target_with_lowercased_host(bypass):
+    """SSRF 守卫必须收到小写 host（URL 大小写不该绕过分组策略）。"""
+    call, _, guards, _, _ = bypass
+    call({"url": "https://Example.COM/path", "want": "datadome"})
+    assert guards == ["example.com"]
+
+
+def test_bypass_propagates_guard_rejection(bypass, monkeypatch):
+    """守卫拒绝时异常原样上抛（错误码/提示由守卫决定，旁路不许改写成别的码）。"""
+    def boom(host):
+        raise SolveError(ErrorCode.INVALID_REQUEST, "目标是私网地址", stage="validate")
+
+    with pytest.raises(SolveError) as ei:
+        mc.handle_compat_bypass({"url": "https://127.0.0.1/", "want": "datadome"},
+                                check_target=boom, entry_for=lambda h: None)
+    assert "私网" in ei.value.message
+
+
+def test_bypass_injects_sticky_egress_and_returns_egress_id(bypass):
+    """cookie 类产物的纪律：同一域沿用主链路粘住的出口，并把 egress_id 回传。"""
+    call, rec, _, entries, holder = bypass
+    holder["entry"] = _Entry()
+    out = call({"url": "https://a.test/", "want": "datadome"})
+    assert entries == ["a.test"]
+    assert rec["body"]["proxy"] == holder["entry"].raw_url
+    assert out["egress_id"] == "eg-1"
+
+
+def test_bypass_respects_caller_proxy(bypass):
+    """调用方显式给了 proxy：不许被粘住的出口覆盖，也不该再去查出口。"""
+    call, rec, _, entries, holder = bypass
+    holder["entry"] = _Entry()
+    out = call({"url": "https://a.test/", "want": "datadome", "proxy": "http://given:1"})
+    assert entries == []
+    assert rec["body"]["proxy"] == "http://given:1"
+    assert "egress_id" not in out
+
+
+def test_bypass_no_entry_configured(bypass):
+    """没配代理池（entry_for 返回 None）：照常求解，只是没有 egress_id。"""
+    call, rec, _, entries, _ = bypass
+    out = call({"url": "https://a.test/", "want": "datadome"})
+    assert entries == ["a.test"] and rec["solves"] == 1
+    assert "egress_id" not in out and "proxy" not in rec["body"]
+
+
+def test_bypass_clamps_main_timeout_field(bypass):
+    """主链路的 `timeout` 优先，并夹取到 [5,120]。"""
+    call, rec, _, _, _ = bypass
+    call({"url": "https://a.test/", "want": "datadome", "timeout": 1000})
+    assert rec["timeout_s"] == 120.0
+
+
+def test_bypass_rejects_non_numeric_timeout(bypass):
+    call, rec, _, _, _ = bypass
+    with pytest.raises(SolveError) as ei:
+        call({"url": "https://a.test/", "want": "datadome", "timeout": "abc"})
+    assert ei.value.code is ErrorCode.INVALID_REQUEST
+    assert rec["solves"] == 0
+
+
+def test_bypass_falls_back_to_timeout_s(bypass):
+    call, rec, _, _, _ = bypass
+    call({"url": "https://a.test/", "want": "datadome", "timeout_s": 33})
+    assert rec["timeout_s"] == 33
+
+
+def test_bypass_default_timeout_is_solver_default(bypass):
+    """两个字段都不给 → 0（表示"用求解器自己的默认值"，不是 0 秒超时）。"""
+    call, rec, _, _, _ = bypass
+    call({"url": "https://a.test/", "want": "datadome"})
+    assert rec["timeout_s"] == 0
+
+
+def test_bypass_marks_start_and_routed_by(bypass):
+    """`_t0` 必须由旁路自己打；归一响应必须标注 routed_by（客户端据此知道走了哪条路）。"""
+    call, rec, _, _, _ = bypass
+    out = call({"url": "https://a.test/", "want": "datadome"})
+    assert isinstance(rec["body"]["_t0"], float)
+    assert out["routed_by"] == {"mode": "multicaptcha", "backend": "captchas",
+                                "type": "datadome"}
+
+
+def test_bypass_passes_through_unsolved_result(bypass, monkeypatch):
+    """求解器报失败：旁路不许把它变成异常（HTTP 200 + solved:false 是本服务的成功契约）。"""
+    async def fake(body, timeout_s=0):
+        return {"type": body.get("type"), "solved": False, "error": "widget not found"}
+
+    monkeypatch.setattr(mc, "solve_async", fake)
+    out = mc.handle_compat_bypass({"url": "https://a.test/", "want": "datadome"},
+                                  check_target=lambda h: None, entry_for=lambda h: None)
+    assert out["solved"] is False and out["error"] == "widget not found"

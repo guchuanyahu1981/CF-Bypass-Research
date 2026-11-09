@@ -23,6 +23,7 @@ from solver.request import (
     MAX_URL_LEN,
     MIN_TIMEOUT,
     clamp_timeout,
+    host_of,
     parse_json_body,
     parse_solve_request,
 )
@@ -220,7 +221,10 @@ def test_payload_too_large_maps_to_413_not_400():
     e = err(b"", f"{BODY_TOO_LARGE_MSG}:{MAX_BODY_BYTES}")
     assert e.code is ErrorCode.PAYLOAD_TOO_LARGE
     assert e.http_status == 413
-    assert "--max-body-bytes" in (e.hint or "")
+    # 提示必须可执行，且**不许**再指向幻影启动参数（v6.4 C1：这个 flag 从来没实现过，
+    # 照提示操作会让 argparse 直接退出）。断言的是"阈值 + 没有可调参数"这两件事。
+    assert str(MAX_BODY_BYTES) in (e.hint or "")
+    assert "--max-body-bytes" not in (e.hint or "")
 
 
 def test_other_body_errors_map_to_400():
@@ -232,3 +236,27 @@ def test_other_body_errors_map_to_400():
 
 def test_parse_json_body_accepts_object():
     assert parse_json_body(b'{"a":1}') == {"a": 1}
+
+
+# ── host_of（v6.4 D2：自 service.py 下沉，嫁接层旁路也要用它）──────
+
+
+def test_host_of_lowercases_and_drops_port():
+    assert host_of("https://Example.COM:8443/path?q=1") == "example.com"
+
+
+def test_host_of_returns_empty_for_unparsable():
+    """解析不出来一律空串：调用方据此报 400，而不是拿半截 host 去打 SSRF 守卫。"""
+    assert host_of("not a url") == ""
+    assert host_of("") == ""
+
+
+def test_host_of_survives_non_string_input():
+    """非字符串不许抛异常：它被用在"即使出错也要写一行审计"的路径上，
+    在那里抛 TypeError 会把审计本身打穿（这正是 v4.7 的老坑）。"""
+    assert host_of(None) == ""
+    assert host_of(123) == ""
+
+
+def test_host_of_keeps_ipv6_literal_without_brackets():
+    assert host_of("https://[::1]/") == "::1"
