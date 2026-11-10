@@ -1,0 +1,19 @@
+{
+  "detect_before": null,
+  "solve_status": 200,
+  "solve": {
+    "ok": false,
+    "solved": false,
+    "backend": null,
+    "egress_id": null,
+    "elapsed": null,
+    "cached": null,
+    "error_code": "unsolved",
+    "stage": "wait",
+    "hint": "该域可能已升级到更严的挑战；也可能是出口 IP 被提分。先把 want 说清楚（clearance / awswaf / turnstile / recaptcha_v3），再换站点验证服务本身可用。",
+    "user_agent": null,
+    "clearance_len": 0,
+    "cookies_len": 0
+  },
+  "wall_s": 120.5
+}

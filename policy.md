@@ -9,7 +9,7 @@
 | Python 全量测试 | **0 failed，0 error** | `python -m pytest tests/ -q` |
 | Python 覆盖率（**分范围整体**） | `solver/` **≥ 80%**；`captchas/` **≥ 20%**（v6.3 实测 22.2%，门槛防它退回改造前的 2%） | `python -m pytest tests/ -q --cov=solver --cov=captchas/ --cov-report=json:coverage.json` + `node scripts/check-coverage.mjs` |
 | Python 覆盖率（**逐模块**） | 每个 `solver/` **与 `captchas/`** 模块 ≥ `docs/coverage-policy.json` 里登记的值；**未登记 = 直接红** | 同上（`node scripts/check-coverage.mjs --coverage-json=coverage.json`） |
-| 嫁接层纳入门禁（v6.3） | `captchas/` 40 个文件、5,006 行、11 个厂商求解器**全部登记**；浏览器驱动主体按"能力边界"登记实测值，纯函数由 `tests/test_captchas_offline.py` 覆盖 | 同上 |
+| 嫁接层纳入门禁（v6.3） | `captchas/` 40 个文件、5,050 行、11 个厂商求解器**全部登记**；浏览器驱动主体按"能力边界"登记实测值，纯函数由 `tests/test_captchas_offline.py` 覆盖 | 同上 |
 | Python 覆盖率（**拆分产物专项**） | `bootstrap.py` **≥ 85%** · `auth.py` **≥ 85%** · `probe.py` **≥ 85%**（三者都是 v4.4 从 `service.py` 拆出来的，拆分当年留下过空洞：bootstrap 38% / auth 73% / probe 72%） | 同上（三项已登记进 `docs/coverage-policy.json`，实测 2026-11-04：bootstrap 87.3% / auth 95.8% / probe 93.4%） |
 | Go 测试 | **0 failed**，且 `-race` 通过 | `cd gocfsolve && go test -race ./...` |
 | Go 静态检查 | `go vet` **无输出** | `cd gocfsolve && go vet ./...` |
@@ -48,6 +48,9 @@
   **2026-11-04 R-E2E-1 台账**：用 **4 次**（udemy 求解 1 + Python 回放 1 + Go 回放 1 + glassdoor 尝试 1），失败 **1 次**（glassdoor 求解超时，按纪律未重试）。累计 ≈**50 / 80**。
   **2026-11-04 R-E2E-2 台账**：判据修正对照用 **6 次**（fresh solve 1 + 带/不带头 2 + 前缀探测 1 + Go 回放 1 + 时序抖动 1）。累计 ≈**56 / 80**。
   **2026-11-04 R-E2E-3 台账**：glassdoor.co.uk 端到端 **2 次，全部成功**（求解 16.5s/12 cookie；回放 200/735,957B/真实标题/前缀 0 marker）。累计 ≈**58 / 80**，累计失败仍 **1/5**。
+  **2026-11-10 R-E2E-4 台账**：目标 `www.scrapingcourse.com/cloudflare-challenge`（公开定位为 CF 挑战练习页）。
+  cfsolve 会话捕获 **1 次**（`challenge --page --solve`，240s 未到 stage2）+ 服务端真机 `/solve` **1 次**（camoufox 经数据中心代理 120s 未解出）＝ **2 次，全部失败**。
+  累计 **60 / 80**，累计失败 **3 / 5**。两项均未重试（同站连续失败即停）。
   **2026-11-04 用户明确授权**：真机 E2E 验证可以做（含求解 + 回放），发版也可以做。
   授权范围仍受上面台账约束（累计上限 80）；**"授权可以花"不等于"可以乱花"**——
   每批照样先报计划、失败照样即停、同站照样串行 ≥30s。

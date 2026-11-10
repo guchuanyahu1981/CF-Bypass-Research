@@ -1,0 +1,32 @@
+{
+  "baseline_commit": "d8a410c",
+  "timestamp": "2026-11-10T18:50:00+08:00",
+  "task_id": "R-3",
+  "status": "blocked",
+  "summary": "尝试用本机 cfsolve（2026-11-04 构建）捕获一份走到 stage2 的会话：拿到的仍只有入口脚本（orchestrator.js + 反混淆产物），没有 response.decoded.txt，6 条 stage2 结构断言仍是 skip。",
+  "commands_executed": [
+    {
+      "cmd": "challenge.exe --page https://www.scrapingcourse.com/cloudflare-challenge plans/证据/r3-stage2-20261110/cfsolve-run-1 --solve --fingerprint D:/cfsolve-upstream/profiles/safari-26-ios.json --proxy http://127.0.0.1:10808",
+      "exit_code": 124,
+      "raw_output_tail": "stderr: answered HTTP 403 Forbidden with a challenge page; running its orchestrator / Fetched the 642751-byte orchestrator; deobfuscating it with the page's options。240s 超时被杀，之后无任何进度输出。"
+    },
+    {
+      "cmd": "python scripts/research.py assertions --json /tmp/assert.json",
+      "exit_code": 0,
+      "raw_output_tail": "pass=2 fail=1 skip=6；skip_reason='样本未走到 stage2（无 response.decoded.txt）'"
+    }
+  ],
+  "files_changed": [],
+  "tests": [],
+  "coverage_summary": null,
+  "seams_touched": [
+    "cfsolve challenge → 会话产物 → corpus → research.py assertions"
+  ],
+  "mock_scenarios_covered": [],
+  "browser_validation": null,
+  "limitations": [
+    "产物只有 page.html / orchestrator.js(642,751B) / orchestrator.deobfuscated.js(543,811B)；deobfuscate 之后卡住（first_payload 的符号执行或 channel.submit 之前）。",
+    "本机 cfsolve 是 Windows 本地补丁版（上游不支持 Windows），profile 是作者自带 safari-26-ios，与出口不匹配——两者都可能影响。",
+    "未再重试：同站连续失败两次即停（policy.md §7.1）。"
+  ]
+}

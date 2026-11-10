@@ -1,0 +1,55 @@
+{
+  "baseline_commit": "d8a410c",
+  "timestamp": "2026-11-10T18:50:00+08:00",
+  "task_id": "R-1",
+  "status": "blocked",
+  "summary": "captchas/ 任一求解器真机跑通的最后一步被许可证挡住：cloakbrowser 0.7.2 可以 pip 安装，但 Chromium 二进制按需下载前必须有 license key（免费档也要先 claim + 邮件确认）。缺 key 时 ensure_binary/launch_async 抛 CloakBrowserLicenseError。",
+  "commands_executed": [
+    {
+      "cmd": "python -m pip install cloakbrowser",
+      "exit_code": 0,
+      "raw_output_tail": "Successfully installed cloakbrowser-0.7.2"
+    },
+    {
+      "cmd": "python -c \"import cloakbrowser; cloakbrowser.ensure_binary()\"",
+      "exit_code": 1,
+      "raw_output_tail": "CloakBrowserLicenseError: No CloakBrowser license key. Get one free: https://cloakbrowser.dev/#claim=<claim-token> (or run: cloakbrowser login), then launch again."
+    },
+    {
+      "cmd": "python -c \"import cloakbrowser; print(cloakbrowser.binary_info())\"",
+      "exit_code": 0,
+      "raw_output_tail": "{'version': None, 'platform': 'windows-x64', 'binary_path': None, 'installed': False, 'cache_dir': None, 'download_url': 'https://cloakbrowser.dev/api/download/latest'}"
+    },
+    {
+      "cmd": "rg -n 'import cloakbrowser' captchas/*/*.py",
+      "exit_code": 0,
+      "raw_output_tail": "datadome/turnstile/perimeterx/awswaf/hcaptcha/cloudflare/recaptcha 七个 solve.py 都在模块级导入 cloakbrowser；11 个厂商求解器全部经 captchas.common.browser 走到 launch_async"
+    }
+  ],
+  "files_changed": [
+    "solver/multicaptcha.py",
+    "tests/test_multicaptcha.py"
+  ],
+  "tests": [
+    {
+      "name": "test_license_error_maps_to_not_configured",
+      "type": "unit",
+      "status": "pass",
+      "evidence": "tests/test_multicaptcha.py（先红后绿；修复前实测 HTTP 500 internal，修复后 503 not-configured）"
+    }
+  ],
+  "coverage_summary": null,
+  "seams_touched": [
+    "captchas/*.solve → cloakbrowser.launch_async",
+    "solver/multicaptcha.solve_async → HTTP 错误码"
+  ],
+  "mock_scenarios_covered": [
+    "license-missing"
+  ],
+  "browser_validation": null,
+  "limitations": [
+    "未执行真机求解：缺 license key，且需要一个真实挑战页。",
+    "领取免费 key 需要人工在 cloakbrowser.dev 确认并收邮件（或 `cloakbrowser login`）——不可由代理代替。",
+    "本机装的是 PyPI 包 0.7.2（pip 可装），但二进制仍专有；安装路径 C:\\Python314\\Lib\\site-packages\\cloakbrowser。"
+  ]
+}

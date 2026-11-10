@@ -1,7 +1,7 @@
 {
-  "measuredAt": "2026-11-09",
-  "siteUrl": "http://localhost:3000",
-  "placeholder": true,
+  "measuredAt": "2026-11-10",
+  "siteUrl": "https://ci.cf-solver.dev",
+  "placeholder": false,
   "indexable": [
     "/",
     "/how-it-works/",

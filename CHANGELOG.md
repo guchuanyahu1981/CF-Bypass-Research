@@ -1,3 +1,25 @@
+## [6.4.1] - 2026-11-10
+
+主题：**依赖"装上了但用不了"归位**。`pip install cloakbrowser` 成功但没有许可证时，
+嫁接层把环境问题报成了服务内部错误。
+
+### 修复
+
+- **cloakbrowser 无许可证不再算 500**：未 `cloakbrowser login` 时 `launch_async()` 抛
+  `CloakBrowserLicenseError`。它发生在 import **之后**，只接 `ImportError` 的分支漏掉了它
+  → HTTP `500 internal` 且日志落一段 traceback。现在与"没装依赖"走同一出口：
+  `not-configured`(503) + 登录提示，不打 traceback。
+  真进程验收 `scripts/e2e_local.py` 的 A26/A16 两条由红转绿（**40/40**）。
+- `docs/API.md` 的受理清单段落补上"装了但没登录"这一态。
+
+### 验证
+
+Python **1066 收集 / 1058 passed / 8 skipped**（本机装了 cloakbrowser，缺失依赖场景转 skip）、
+覆盖率 `solver/` **89.9%**、`captchas/` 22.2%（65 模块全部达标）、Go **52** 个 `Test*` 全绿、
+门禁自测 **21/21**、两页真浏览器 E2E **35/35**、`e2e_local.py` **40/40**、
+公开站构建 + `verify:site`（14 路由 / axe 0）+ E2E **19/19**、
+Lighthouse 桌面 **100/100/100/100**（中英两页）、移动 97 / 99。
+
 ## [6.4.0] - 2026-11-09
 
 主题：**工程债清零**。工程待办 9 项与 UI/UX 残留 5 项全部落地，对外契约补上此前缺失的两类响应。

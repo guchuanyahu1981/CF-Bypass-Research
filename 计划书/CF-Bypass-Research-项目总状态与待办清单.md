@@ -11,17 +11,17 @@
 > | `plans/审计与改进指南-v6.3→v7.0.md` | `fa5615c` | 未完成 9 项 → §3.1（本轮实测了 file:line）；风险决策 → §4 |
 > | `workflow_status.md` | `0ed810b` | 仍被代码引用的风险 → §4.1；审查记录 → §4.4 |
 >
-> **基线**：`master` @ `0ed810b`（v6.3.2）+ 工作树上的 v6.4 工程债一轮（未发版）· 2026-11-09 · 证据分级：**已验证**（实际运行观察）/ **静态确认**（读代码确认）/ **合理推断** / **待验证**（缺环境或权限）
+> **基线**：`master` @ `d8a410c`（v6.4.0，已推送、已打 tag）+ v6.4.1「依赖装上了但用不了」修复 · 2026-11-10 · 证据分级：**已验证**（实际运行观察）/ **静态确认**（读代码确认）/ **合理推断** / **待验证**（缺环境或权限）
 
 ---
 
 ## 0. 一页速览
 
-- **服务面**（`solver/` + `gocfsolve/`）：v6.3.2 发版，CI 双 workflow 全绿（`ci` run 42419767594 / `site-ci` run 42419701920）。
-- **嫁接层**（`captchas/`）：40 文件 5,006 行已纳入覆盖率门禁，实测 22.21%（门槛 20%）。
-- **公开站**（`site/`）：V1.1 落地并经三轮独立审查修复——14 路由、axe 0、Lighthouse 桌面 100/100/100/100、移动 98/100/100/100。
+- **服务面**（`solver/` + `gocfsolve/`）：v6.4.0 已推送（`d8a410c` / tag `v6.4.0`），本轮 v6.4.1 修「依赖装上了但用不了」；CI 双 workflow 全绿（`ci` run 42419767594 / `site-ci` run 42419701920）。
+- **嫁接层**（`captchas/`）：40 文件 5,050 行已纳入覆盖率门禁，实测 22.21%（门槛 20%）。
+- **公开站**（`site/`）：V1.1 落地——14 路由、axe 0、Lighthouse 桌面 **100/100/100/100**（中英两页）、移动 97 / 99。
 - **现有两页**（`/`、`/console`）：36 单测 + 35/35 真浏览器 E2E，wedged 徽章 6.47:1。
-- **未闭环**：工程待办 **9/9 已闭环**（§3.1）、UI/UX 残留 **5/5 已处理**（§3.2）、待授权 6 项（§3.3：3 项真机动作已获授权，需真实出站执行；3 项部署/账号本轮不做）。**无 P0/P1 阻塞**。
+- **未闭环**：工程待办 **9/9 已闭环**（§3.1）、UI/UX 残留 **5/5 已处理**（§3.2）；§3.3 六项现状：**R-2 部分闭环**（审计 + 出口联动已验证，clearance 未拿到）、**R-1 / R-3 受阻**（许可证 / cfsolve 未到 stage2）、**D-1 / D-2 / D-3 未执行**（缺凭证与人工）。**无 P0/P1 阻塞**。
 
 ---
 
@@ -29,17 +29,18 @@
 
 | 项 | 值 | 口径 |
 |---|---|---|
-| 版本 | `6.3.2`（`docs/facts.json`） | 已验证 |
-| Python 用例 | **1065 收集 / 1058 passed / 7 skipped** | 已验证（2026-11-09 复跑） |
-| 覆盖率 | `solver/` **90%**（89.87%，门槛 80）· `captchas/` **22.21%**（门槛 20）· 65 模块逐模块登记 | 已验证 |
-| 模块级指标（接入事实源） | `engines.py` **100%** · `service.py` **3006 行** | 已验证（`docs/facts.json` + `validate-docs.mjs` 把关） |
+| 版本 | `6.4.1`（`docs/facts.json`） | 已验证 |
+| Python 用例 | **1066 收集 / 1058 passed / 8 skipped** | 已验证（2026-11-10 复跑；第 8 个 skip 来自 `test_strategies.py:53`——本机装了 cloakbrowser，"缺失依赖"场景按设计转 skip） |
+| 覆盖率 | `solver/` **90%**（89.93%，门槛 80）· `captchas/` **22.21%**（门槛 20）· 65 模块逐模块登记 | 已验证 |
+| 模块级指标（接入事实源） | `engines.py` **100%** · `service.py` **3008 行** | 已验证（`docs/facts.json` + `validate-docs.mjs` 把关） |
 | Go | 52 个 `Test*`，`-race` 全绿 | 已验证 |
 | findings | 54 条（三态 verdict），`validate-findings` exit 0 | 已验证 |
 | openapi | 14 个操作与源码路由双向一致 | 已验证 |
 | 公开站 | 17 HTML / 20 内联 hash / 12 可索引页 + 2 noindex + 404 | 已验证（`plans/证据/ui-v1/`） |
 | 初始 JS / 3D chunk / CSS | 233,186 B（227.7 KB）/ 241,853 B（236.2 KB）/ 5,438 B（gzip） | 已验证（`bundle.json`） |
-| 真机预算台账 | **58 / 80**，累计失败 **1 / 5** | 静态确认（`policy.md` §2） |
-| 离线压测（v6.4 复跑） | hot **5483 QPS** / p50 1.38ms / p99 **3.14ms** / 0 错；cold 32 并发 **0 拒绝**、1 次求解/请求；share 4 进程 **每轮只解 1 次** | 已验证（`scripts/loadtest.py` 三模式，证据 `evidence/v64-engineering-debt.json`） |
+| 真机预算台账 | **60 / 80**，累计失败 **3 / 5** | 静态确认（`policy.md` §2，含 2026-11-10 R-E2E-4 两次） |
+| 本机真进程 E2E | `scripts/e2e_local.py` **40/40**（36.4s→16.4s，修复后复跑） | 已验证（`evidence/e2e-local-20261110.json`） |
+| 离线压测（v6.4 复跑） | hot **5483 QPS** / p50 1.38ms / p99 **3.14ms** / 0 错；cold 32 并发 **0 拒绝**、1 次求解/请求；share 4 进程 **每轮只解 1 次** | 已验证（`scripts/loadtest.py` 三模式，证据 `evidence/v64-engineering-debt.json`）；2026-11-10 复跑默认参数：hot 4926 QPS / p50 1.55ms / p99 3.31ms / 0 错，cold 8/8 接受 0 拒绝 1.0 次求解/请求，share 4 进程两阶段均 1 次/轮 |
 
 ---
 
@@ -71,7 +72,7 @@
 
 - `scripts/corpus.py`（归档/脱敏/校验）、`scripts/research.py`（doctor / assertions / diff / gaps / patch）、`run.py`（跨平台入口，`run.ps1` 转发）。
 - 结构断言矩阵：6 类 stage2 断言 + 3 条 source 假设；合成样本用例永不 skip；`test_oracle_is_red_when_structure_changes` 证明断言真的在断言。
-- **现状限制**：`corpus/` 无真实样本（需 §3.3 授权），CI 里 6 条结构断言恒 skip。
+- **现状限制**：`corpus/` 有 **1 份真实样本**（`2026-11-04-6c02e277`，1,151,206 B，入口级 `orchestrator.js` + 反混淆副本），但没走到 stage2（无 `response.decoded.txt`）→ **6 条 stage2 结构断言在 CI 里恒 skip**。补样本见 §3.3 R-3（2026-11-10 尝试受阻）。
 
 ### 2.5 公开站设计口径（代码即事实源）
 
@@ -117,20 +118,22 @@
 
 ### 3.3 待授权（6 项；需外部凭证或真机出站，未执行前不做）
 
-| # | 项 | 需要什么 | 成本 | 状态（2026-11-09） |
+| # | 项 | 需要什么 | 成本 | 状态（2026-11-10） |
 |---|---|---|---|---|
-| **R-1** | `captchas/` 任一求解器真机跑通（先选 aliyun 或 turnstile 单次） | cloakbrowser 二进制 + 真实挑战页 | 真机 1–2 次 | 已授权，**未执行**：本机缺 `cloakbrowser`（`import cloakbrowser` False），且需真实挑战页出站 |
-| **R-2** | 真实 CF 站复验 `/audit` + 出口实测联动（确认 `egress_id` 与实测 IP 一致） | 允许出站 + 指定站点 | 真机 ≤3 次 | 已授权，**未执行**：需指定站点与出站许可，属真机预算动作 |
-| **R-3** | 补一份走到 stage2 的 cfsolve 会话快照（解除 6 条结构断言 skip + `corpus/` 空态文案） | 允许打 1 个真实站 + 内存护栏 | 真机 1–2 次 | 已授权，**未执行**：同上 |
-| **D-1** | 部署公开站（Cloudflare Pages 首选，支持 `_headers`）；绑定域名 | 域名 + API token | — | 本轮不做（按用户决定）。执行时需要：域名、Cloudflare 账号与 `CLOUDFLARE_API_TOKEN`、`CLOUDFLARE_ACCOUNT_ID`；步骤见 `site/README.md` 的部署一节 |
-| **D-2** | Search Console / Bing / 百度验证与 sitemap 提交；关键词 volume 回填 | 账号 + DNS/HTML 验证 | — | 本轮不做。执行时需要：三个平台账号、`site/seo/keywords.json` 的 volume 回填数据 |
-| **D-3** | 英文母语审校签字（`site/content/EN-REVIEW.md` 的 Sign-off 仍 `(pending)`） | 人工 | — | 本轮不做。执行时需要一个英文母语审校人：只有他能签，签字前 `site-CI` 的 content 用例不会去验证"语气是否地道" |
+| **R-1** | `captchas/` 任一求解器真机跑通（先选 aliyun 或 turnstile 单次） | cloakbrowser 二进制 + 真实挑战页 | 真机 1–2 次 | **受阻**（2026-11-10）：`pip install cloakbrowser` 成功（PyPI 0.7.2），但 Chromium 二进制下载要 license key——未 `cloakbrowser login` 时 `ensure_binary`/`launch_async` 抛 `CloakBrowserLicenseError`。免费档需在 cloakbrowser.dev claim 并邮件确认（人工）。见 `evidence/R-1-20261110.json` |
+| **R-2** | 真实 CF 站复验 `/audit` + 出口实测联动（确认 `egress_id` 与实测 IP 一致） | 允许出站 + 指定站点 | 真机 ≤3 次 | **部分闭环**（2026-11-10，用 1 次）：`run.py egress` 实测 IP `129.153.97.251` 与登记值一致；真机 `/solve` 的审计行落盘且 `GET /audit` 读回，`/shutdown` 也落审计。**未拿到 clearance**：camoufox 经 US 数据中心代理 120.5s 返回 `unsolved`，因此成功响应里的 `egress_id` 字段未观察到。见 `evidence/R-2-20261110.json` |
+| **R-3** | 补一份走到 stage2 的 cfsolve 会话快照（解除 6 条结构断言 skip + `corpus/` 空态文案） | 允许打 1 个真实站 + 内存护栏 | 真机 1–2 次 | **受阻**（2026-11-10，用 1 次）：`challenge --page --solve` 在 deobfuscate 之后卡住，240s 被超时杀掉；产物只有 `page.html` / `orchestrator.js`(642,751B) / `orchestrator.deobfuscated.js`(543,811B)，**没有 `response.decoded.txt`**，6 条 stage2 断言仍 skip。见 `evidence/R-3-20261110.json` 与 `plans/证据/r3-stage2-20261110/` |
+| **D-1** | 部署公开站（Cloudflare Pages 首选，支持 `_headers`）；绑定域名 | 域名 + API token | — | **未执行（缺凭证）**：`wrangler whoami` → `Not logged in`，环境无 `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID`。执行时需要：域名、Cloudflare 账号与这两个变量；步骤见 `site/README.md` 部署一节。本轮已完成**本地可部署性验证**：生产构建 + `verify:site`（14 路由 / axe 0）+ E2E 19/19 + Lighthouse 桌面 100×4 |
+| **D-2** | Search Console / Bing / 百度验证与 sitemap 提交；关键词 volume 回填 | 账号 + DNS/HTML 验证 | — | **未执行（缺账号）**：三个平台账号与 DNS/HTML 验证都不在本机；关键词 volume 也没有数据源（`site/seo/keywords.json` 只有意图矩阵） |
+| **D-3** | 英文母语审校签字（`site/content/EN-REVIEW.md` 的 Sign-off 仍 `(pending)`） | 人工 | — | **未执行（需人工）**：只有英文母语审校人能签；AI 不能代签，也不该把"机器读过一遍"写成签字 |
 
-> **R-1/R-2/R-3 的执行纪律**（照 `policy.md` §2 走，不另立流程）：台账 58/80、累计失败 1/5；同站串行 ≥30s；换出口必须换 `--egress-id`；累计失败 ≥5 立即全停。证据按现有模板落 `plans/证据/`（真机）与 `evidence/`（版本验收），长什么样见已归档的同类记录。
+> **R-1/R-2/R-3 的执行纪律**（照 `policy.md` §2 走，不另立流程）：台账 **60/80**、累计失败 **3/5**；同站串行 ≥30s；换出口必须换 `--egress-id`；累计失败 ≥5 立即全停。证据按现有模板落 `plans/证据/`（真机）与 `evidence/`（版本验收）。
+>
+> **R-E2E-4 批次结果（2026-11-10）**：目标 `www.scrapingcourse.com/cloudflare-challenge`（公开定位为 CF 挑战练习页）。用 **2 次，全部失败**：① cfsolve 会话捕获 240s 未到 stage2；② 服务端 camoufox `/solve` 120s 未解出。**副产品**：装 `cloakbrowser` 后暴露了一个真缺陷——无许可证被报成 `500 internal` + traceback，已在 v6.4.1 归到 `not-configured`(503)，`e2e_local.py` 由 38/40 回到 **40/40**。计划与原始输出见 `plans/证据/real-machine-batch-20261110-plan.md`、`plans/证据/r2-20261110/`、`plans/证据/r3-stage2-20261110/`。
 
-> 另有两项已知偏离授权，本轮不动：根 README 顶部加公开站链接（原 V1 指南 §14.4 标注需单独确认，git 历史可查）；`llms.txt`（实验性，未创建）。
+> 另有两项已知偏离授权，**仍未做**：根 README 顶部加公开站链接、`llms.txt`。两者都要求一个真实公开 origin，而 D-1 未部署——现在加链接只会指向不存在的站点，等部署落地后一并做。
 > **工作区注记**：根目录 `local_tok.txt`（43 B，本地求解 token）、`local_solver.log`、`tmpfin2/` 未跟踪且未被 `.gitignore` 覆盖。用户 2026-11-09 拍板**不处理**（接受相关产物随后续研究一起公开）；执行方提交时请用显式路径 `git add`，不要 `git add -A`。
-> **真机纪律（`policy.md` §2，遇到时照此执行）**：台账 58/80、累计失败 1/5；累计失败 ≥5 立即全停；同站串行 ≥30s；换出口必须换 `--egress-id`；**CI 永远离线**。
+> **真机纪律（`policy.md` §2，遇到时照此执行）**：台账 **60/80**、累计失败 **3/5**；累计失败 ≥5 立即全停；同站串行 ≥30s；换出口必须换 `--egress-id`；**CI 永远离线**。
 
 ---
 
@@ -175,6 +178,8 @@
 
 | v6.4 独立审查（本轮） | 工作树全部改动（C1–C5、D1–D2、A1、V-1/V-4/V-5、三道门禁脚本） | 1 P1 + 1 P2 + 6 P3，逐条核实全部成立并已修：**P1** Go 客户端只认 `cf_clearance`，`want=turnstile` 永远报错（产物字段随 want 变）→ `Clearance` 补 `Token`/`AWSWAFToken`、校验按 want 选字段、补 3 条产物用例；**P2** 405/OPTIONS 不读 body → 同连接下一条请求被残留字节顶成 501 HTML（C3 引入的回归）→ 两处先 `_read_body_raw()`，补 2 条 keep-alive 错位用例；**P3** 逐操作 404 对任何操作都不可达（C4 自相矛盾）→ 改成 `info.description` 整体说明；204 带 `Content-Length` 违反 RFC 9110 §8.6 → 删；状态页空态丢 `chips` class → 补回；`CONNECT` 仍 501 HTML → 并入 405；detect 早退路径审计 `elapsed` 恒 0 → 入口取时间戳；`toleranceFor` 注释与实现不符 → 给 `module_coverage` 补 ±2 容差。修复后定向测试与全量复跑均绿 |
 
+| v6.4.1 真进程 E2E + 独立审查（2026-11-10） | `scripts/e2e_local.py` 全 40 条；独立审查员只读核 `git diff` + `cloakbrowser` 包源码 | **1 P1 已修**：`cloakbrowser` 装上但无许可证时，`multicaptcha.solve_async` 只接 `ImportError`，`CloakBrowserLicenseError` 落到 `INTERNAL` → HTTP **500** + 日志 traceback（A26/A16 两条红）。修法：按"依赖不可用"归 `NOT_CONFIGURED`(503) + 登录提示、不打 traceback；补 1 条单测（先红后绿）。**独立审查 Verdict: Approve**，并按审查意见补三点：许可证路径保留原文日志（不带栈）、归因文案覆盖"缺 key / 过期 / 会话满"、主链启动失败提示不再只提 camoufox。审查另提 2 条**记录不修**（既有缺口，P3）：① 主链"握手后"的许可证拒绝（免费档 1 并发被占）在 `solver/service.py:1146` `new_context()` 抛出，经 `:643` 原样上抛到 `:2544` → `INTERNAL` 500；② key 有效但二进制下载失败（`cloakbrowser/download.py:229`）是普通 `RuntimeError` → 500。两者都要先有可用许可证才能真机触发 |
+
 **Approve 语义**：严格审查后未发现阻塞性问题，不是"代码完美"。新节点标 Done 前必须有 Approve 记录（写进本节）。
 
 ---
@@ -216,7 +221,7 @@
 ## 7. 验证命令速查
 
 ```text
-python -m pytest tests/ -q                                        # 全量（1065 收集）
+python -m pytest tests/ -q                                        # 全量（1066 收集）
 python -m pytest tests/test_console.py tests/test_statuspage.py -q # 两页 UI（36）
 python scripts/verify_ui_e2e.py                                    # 两页真浏览器 35/35（需 CHROME_PATH）
 cd gocfsolve && go test -race ./...                                # Go 52
@@ -230,4 +235,5 @@ cd site && npm run build && npm run csp && npm run verify:csp && npm run verify:
 ---
 
 *2026-11-09 · 合并自 6 份文档 · 基线 v6.3.2（`0ed810b`）*
-*同日晚间：v6.4 工程债一轮落地（§3.1 九项 + §3.2 五项，见 `CHANGELOG.md` 的「未发布」条目）；版本号未动，发版是另一个决定*
+*2026-11-09：v6.4.0 工程债一轮发版（§3.1 九项 + §3.2 五项，commit `d8a410c` / tag `v6.4.0`）*
+*2026-11-10：v6.4.1——真进程 E2E 抓到「cloakbrowser 装了但无许可证」被误报 500，已归位到 `not-configured`；§3.3 真机批次 R-E2E-4 执行（R-2 部分闭环，R-1/R-3 受阻），台账 60/80、失败 3/5*

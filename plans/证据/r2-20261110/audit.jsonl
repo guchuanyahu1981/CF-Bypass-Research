@@ -1,0 +1,2 @@
+{"event": "solve", "req_id": "e2caf242bfaa", "host": "www.scrapingcourse.com", "ok": false, "ms": 120486, "error_code": "unsolved", "stage": "wait", "route": null, "path": "/solve", "ts": 1794307156.972, "request_id": "e2caf242bfaa"}
+{"event": "shutdown", "peer": "127.0.0.1", "path": "/shutdown", "ts": 1794307228.207, "request_id": "98ca2cd2daba"}

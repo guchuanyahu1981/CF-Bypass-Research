@@ -281,6 +281,32 @@ def test_dispatch_internal_error_wrapped(monkeypatch):
     assert ei.value.code is ErrorCode.INTERNAL
 
 
+def test_license_error_maps_to_not_configured(monkeypatch):
+    """cloakbrowser 装了但没有许可证 → NOT_CONFIGURED(503)，不是 INTERNAL(500)。
+
+    实测（2026-11-10）：`pip install cloakbrowser` 成功后，未登录时的
+    `launch_async()` 抛 `CloakBrowserLicenseError` —— 它发生在 import **之后**，
+    只接 `ImportError` 的旧分支漏掉了它，于是 HTTP 层回 `500 internal` 并在日志里
+    落一段 traceback（`scripts/e2e_local.py` 的 A26/A16 两条因此变红）。
+    "装上了但用不了"与"没装"是同一类环境问题，必须走同一出口。
+    """
+    class CloakBrowserLicenseError(RuntimeError):
+        pass
+
+    CloakBrowserLicenseError.__module__ = "cloakbrowser.license"
+
+    async def boom(*a, **k):
+        raise CloakBrowserLicenseError("No CloakBrowser license key")
+
+    _install_fake(monkeypatch, "captchas.datadome.solve", solve_datadome=boom)
+    with pytest.raises(SolveError) as ei:
+        _run(mc.solve_async({"type": "datadome", "url": "https://a.test/"}, timeout_s=5))
+    assert ei.value.code is ErrorCode.NOT_CONFIGURED
+    assert "cloakbrowser login" in (ei.value.hint or "")
+    # 归因要覆盖"缺 key / key 过期 / 会话数满"三种，不能写死成"下载被拒"
+    assert "许可证" in str(ei.value)
+
+
 def test_inflight_tracking_cleared_after_solve(monkeypatch):
     """在途表必须在结束时清空（否则 /status 会永远显示假任务）。"""
     async def fake(*a, **k):

@@ -209,7 +209,7 @@ $TOKEN = (Select-String -Path .env -Pattern '^CF_SOLVE_TOKEN=(.+)$').Matches[0].
 | `timeout` | 504 | `wait` | 超过预算；调大 `timeout`（≤120）或降并发 |
 | `transport` | 502 | `navigate` | 网络层失败（DNS/连接/TLS） |
 | `browser-unavailable` | 503 | `admit` | 浏览器启动失败或中途断开；看 `/health` 的 `last_error` |
-| `not-configured` | 503 | `admit` | 未安装 camoufox；`pip install camoufox && python -m camoufox fetch` |
+| `not-configured` | 503 | `admit` | 依赖未就绪：未安装 camoufox（`pip install camoufox && python -m camoufox fetch`）；嫁接层还需 `cloakbrowser` 已安装**且已 `cloakbrowser login`**（二进制按需下载） |
 | `internal` | 500 | `internal` | 未预期异常；看服务端 traceback |
 
 ### Example
@@ -301,8 +301,9 @@ curl -s -X POST http://127.0.0.1:8878/solve \
 `proxies` 只在配置了代理池时出现，且**永远不含用户名/密码**（只给脱敏后的 `scheme://host:port`）。
 
 `captcha_types`（v6.1）是**万盾嫁接层受理的扩展 `want` 清单**（11 种，见「万盾扩展类型」一节）。
-它只是"受理清单"，**不代表依赖已就绪**：没装 `cloakbrowser` 时这些类型会报
-`not-configured` + 安装提示，而 CF 主链路完全不受影响。
+它只是"受理清单"，**不代表依赖已就绪**：没装 `cloakbrowser`、或装了但没有许可证
+（二进制按需下载，未 `cloakbrowser login` 时 `launch_async` 抛 `CloakBrowserLicenseError`）
+都会报 `not-configured`(503) + 安装/登录提示，而 CF 主链路完全不受影响。
 带 `_x` 后缀的是避让主链路命名的变体（`turnstile_x` / `recaptcha_x` / `cloudflare_x` / `awswaf_x`），
 它们与主链路的同名能力是**两套实现**（CloakBrowser vs Camoufox/pydoll/cfsolve）。
 

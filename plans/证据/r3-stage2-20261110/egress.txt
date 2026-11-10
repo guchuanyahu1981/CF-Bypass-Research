@@ -1,0 +1,5 @@
+egress: http://127.0.0.1:10808 (local proxy)
+measured_ip: 129.153.97.251
+loc: US
+measured_utc: 2026-11-10T10:17Z
+direct_ip: 112.47.195.214 (CN) — not used for this batch

@@ -37,8 +37,10 @@
 
 ## 依赖
 
-`pip install cloakbrowser`（必需）；`aliyun`/`arkose` 另需 `onnxruntime` +
-`opencv-python-headless`。缺失时请求报 `not-configured`，不影响主链路。
+`pip install cloakbrowser`（必需）**并先 `cloakbrowser login`**——Chromium 二进制按需下载，
+没有许可证时 `launch_async` 抛 `CloakBrowserLicenseError`；`aliyun`/`arkose` 另需
+`onnxruntime` + `opencv-python-headless`。缺失或未登录时请求报 `not-configured`(503)
++ 安装/登录提示，不影响主链路。
 
 ## 上游同步策略
 

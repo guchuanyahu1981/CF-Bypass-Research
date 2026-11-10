@@ -25,9 +25,17 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 import corpus  # noqa: E402
 
-SKIP_REASON = (
-    "corpus empty: no real session snapshot; "
-    "see 计划书/CF-Bypass-Research-项目总状态与待办清单.md §3.3 待授权清单"
+NO_SAMPLES_REASON = (
+    "corpus has no real session snapshot; "
+    "see 计划书/CF-Bypass-Research-项目总状态与待办清单.md §3.3 R-3"
+)
+
+#: 有真实样本、但没有一份走到 stage2（缺 `response.decoded.txt`）——stage2 断言不可判定。
+#: 与"样本库为空"分开写：两种情况原因不同，混用会让 skip 文案说谎
+#: （2026-11-10 实测：corpus 里有 1 份入口级样本，旧文案却报 "corpus empty"）。
+NO_STAGE2_REASON = (
+    "real samples do not reach stage2 (no response.decoded.txt); "
+    "see 计划书/CF-Bypass-Research-项目总状态与待办清单.md §3.3 R-3"
 )
 
 #: stage2 的 6 类结构断言（名字 = manifest 断言矩阵的 key）
@@ -108,7 +116,7 @@ def test_structure_assertion_on_real_corpus(assertion):
 
     entries = _load_index()
     if not entries:
-        pytest.skip(SKIP_REASON)
+        pytest.skip(NO_SAMPLES_REASON)
     judged: list[tuple[str, bool]] = []
     for e in entries:
         session_dir = _entry_dir(e)
@@ -120,7 +128,7 @@ def test_structure_assertion_on_real_corpus(assertion):
         assert assertion in hits, f"断言 [{assertion}] 没有产出结果"
         judged.append((e["id"], hits[assertion]))
     if not judged:
-        pytest.skip("真样本都不含 stage2 程序 — " + SKIP_REASON)
+        pytest.skip(NO_STAGE2_REASON)
     assert all(isinstance(v, bool) for _, v in judged), judged
 
 

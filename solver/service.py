@@ -556,7 +556,9 @@ class Solver:
                         ErrorCode.BROWSER_UNAVAILABLE,
                         f"浏览器启动失败：{type(e).__name__}: {str(e)[:160]}",
                         stage="admit",
-                        hint="检查 camoufox 是否已安装并执行 python -m camoufox fetch；/health 会在恢复后自动转为 200",
+                        hint="检查所选引擎是否可用：camoufox 需执行 python -m camoufox fetch；"
+                             "cloakbrowser 需先 cloakbrowser login（二进制按需下载）；"
+                             "/health 会在恢复后自动转为 200",
                     )
                 )
                 if self._stopping.wait(backoff):

@@ -149,6 +149,20 @@ def validate_request(body: dict) -> None:
             ErrorCode.INVALID_REQUEST, "type=arkose 需要 public_key", stage="validate")
 
 
+def _is_unusable_dependency(exc: BaseException) -> bool:
+    """依赖装了但用不了（当前具体形态：cloakbrowser 无许可证密钥）。
+
+    为什么单列一条：`pip install cloakbrowser` 成功后，未 `cloakbrowser login`
+    时 `launch_async()` 抛 `CloakBrowserLicenseError` —— 它发生在 import **之后**，
+    所以 `except ImportError` 接不住，会落到 INTERNAL。对调用方来说这与"没装"
+    是同一件事：环境没准备好，该去装/该去登录，而不是服务崩了。
+    用 `模块 + 类名` 双条件识别，避免把恰好同名的其他异常误判成环境问题。
+    """
+    cls = type(exc)
+    return (cls.__module__.split(".", 1)[0] == "cloakbrowser"
+            and cls.__name__.endswith("LicenseError"))
+
+
 async def solve_async(body: dict, timeout_s: float = 0) -> dict:
     """分发到 captchas/ 对应求解器并归一结果。同类型串行，跨类型并行。"""
     type_ = (body.get("type") or body.get("want") or "").strip().lower()
@@ -194,6 +208,19 @@ async def solve_async(body: dict, timeout_s: float = 0) -> dict:
                  "aliyun/arkose 另需 onnxruntime + opencv-python-headless",
         ) from e
     except Exception as e:
+        if _is_unusable_dependency(e):
+            # 不打 traceback：这不是"求解器内部崩了"，是环境缺许可证；调用方要的是
+            # "该做什么"，一串栈只会让人以为服务坏了。**原文仍进日志（不带栈）**——
+            # 否则排障时分不出"缺 key"、"key 过期"与"免费档会话数满了"。
+            log.warning("multicaptcha: cloakbrowser 环境级不可用：%s", e)
+            raise SolveError(
+                ErrorCode.NOT_CONFIGURED,
+                "cloakbrowser 已安装但当前不可用（许可证密钥缺失/过期，或免费档会话数已满）",
+                stage="admit",
+                hint="运行 `cloakbrowser login`，或在 cloakbrowser.dev 领取/续期 key"
+                     "（免费档 1 并发）；只做 CF 可改用主链路 want=clearance/turnstile"
+                     "（camoufox，免费）",
+            ) from e
         log.error("multicaptcha solve failed: %s", e, exc_info=True)
         raise SolveError(ErrorCode.INTERNAL, str(e), stage="solve") from e
     finally:

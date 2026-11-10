@@ -1,0 +1,48 @@
+{
+  "baseline_commit": "d8a410c",
+  "timestamp": "2026-11-10T18:50:00+08:00",
+  "task_id": "R-2",
+  "status": "partial",
+  "summary": "真实 CF 站复验：审计链路与出口实测联动都通过；唯一没拿到的是 clearance 本身（camoufox 经数据中心代理 120s 未解出）。",
+  "commands_executed": [
+    {
+      "cmd": "python run.py egress --proxy http://127.0.0.1:10808 --proxy-egress-ip http://127.0.0.1:10808=129.153.97.251",
+      "exit_code": 1,
+      "raw_output_tail": "✓ 代理池 · 1 个出口: 全部已登记出口 IP；✓ 代理池 · 出口 IP 实测: http://127.0.0.1:10808=129.153.97.251。结论 WARN(exit=1) 仅因 doctor 未配置 cfsolve 二进制（未传 --cfsolve-bin），出口校验本身 PASS。"
+    },
+    {
+      "cmd": "python solver/service.py --port 18777 --proxy http://127.0.0.1:10808 --proxy-egress-ip http://127.0.0.1:10808=129.153.97.251 --audit-log plans/证据/r2-20261110/audit.jsonl",
+      "exit_code": 0,
+      "raw_output_tail": "监听 http://127.0.0.1:18777 (camoufox, ttl=1500s, egress=default, auth=file, cache=memory, proxies=1)"
+    },
+    {
+      "cmd": "POST /solve {url: https://www.scrapingcourse.com/cloudflare-challenge, timeout: 120}",
+      "exit_code": 0,
+      "raw_output_tail": "HTTP 200 {ok:false, solved:false, error_code:unsolved, stage:wait}，耗时 120.5s"
+    },
+    {
+      "cmd": "GET /audit",
+      "exit_code": 0,
+      "raw_output_tail": "1 行：{event:solve, host:www.scrapingcourse.com, ok:false, ms:120486, error_code:unsolved, stage:wait, request_id:e2caf242bfaa}；GET /audit 读回同一行（只落盘不算闭环）"
+    },
+    {
+      "cmd": "POST /shutdown",
+      "exit_code": 0,
+      "raw_output_tail": "202 {ok:true, state:shutting-down}；审计再落一行 event=shutdown"
+    }
+  ],
+  "files_changed": [],
+  "tests": [],
+  "coverage_summary": null,
+  "seams_touched": [
+    "ProxyPool 登记出口 IP → egress_id",
+    "solve → audit(JSONL) → GET /audit"
+  ],
+  "mock_scenarios_covered": [],
+  "browser_validation": "真实 camoufox 进程经 http://127.0.0.1:10808（实测出口 129.153.97.251/US）访问 Cloudflare 挑战页；120s 未解出",
+  "limitations": [
+    "未拿到 clearance：出口是美国 Oracle Cloud 数据中心 IP，camoufox 120s 超时；本轮不重试（同站纪律）。",
+    "因此『成功响应里的 egress_id 字段』只做了配置侧验证（run.py egress 实测 IP 与登记值一致），未在成功求解响应中观察。",
+    "失败响应本身不带 egress_id（字段只在成功结果里）——这是既有契约，不是缺陷。"
+  ]
+}

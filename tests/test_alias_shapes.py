@@ -45,7 +45,8 @@ def test_alias_shapes_on_corpus_has_no_unknown_static():
     samples = sorted(p / "iframe.deobfuscated.js" for p in corpus.iterdir()
                      if (p / "iframe.deobfuscated.js").exists()) if corpus.is_dir() else []
     if not samples:
-        pytest.skip("corpus empty: no real session snapshot; 见 计划书/CF-Bypass-Research-项目总状态与待办清单.md §3.3")
+        pytest.skip("corpus has no iframe.deobfuscated.js sample（现有样本是页面级 "
+                    "orchestrator.js）; 见 计划书/CF-Bypass-Research-项目总状态与待办清单.md §3.3 R-3")
     for js in samples:
         report = a.analyze_source(js.read_text(encoding="utf-8", errors="replace"), js.name)
         for sig, info in report.items():
