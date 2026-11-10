@@ -1,0 +1,147 @@
+{
+  "task_id": "RELEASE-6.4.2",
+  "status": "done",
+  "timestamp": "2026-11-10T22:00:00+08:00",
+  "baseline_commit": "d8a410c",
+  "goal": "把总状态清单 §3.3 的待授权项收口到可交付状态；修复真进程 E2E 抓到的依赖误分类；发 v6.4.1 / v6.4.2 并推送。",
+  "review_findings": {
+    "critical": [],
+    "fixed": [
+      "cloakbrowser installed but unlicensed raised CloakBrowserLicenseError after import, so it fell to INTERNAL(500) + traceback instead of NOT_CONFIGURED(503) — e2e_local A26/A16 red",
+      "site /changelog head and tests.python did not track docs/facts.json after the 6.4.1 bump — site-ci content test red, fixed in 6.4.2",
+      "doc drift: captchas 5,006->5,050 lines, python tests 1065->1066, service.py 3,006->3,008 lines",
+      "corpus skip text conflated 'corpus empty' with 'sample never reached stage2'"
+    ],
+    "recorded_not_fixed": [
+      "main engine: a license rejection after the browser handshake bubbles as a raw exception -> INTERNAL 500 (needs a real license to trigger)",
+      "cloakbrowser binary download failure (valid key) is a plain RuntimeError -> 500"
+    ]
+  },
+  "commands_executed": [
+    {
+      "cmd": "python -m pytest tests/ -q --cov=solver --cov=captchas/ --cov-report=json:coverage.json",
+      "exit_code": 0,
+      "raw_output_tail": "1058 passed, 8 skipped in 131.94s（收集 1066）"
+    },
+    {
+      "cmd": "node scripts/check-coverage.mjs --coverage-json=coverage.json",
+      "exit_code": 0,
+      "raw_output_tail": "solver/ 89.93%（门禁 80%）/ captchas/ 22.21%（门禁 20%）/ 65 模块全达标"
+    },
+    {
+      "cmd": "cd gocfsolve && go test -race ./...",
+      "exit_code": 0,
+      "raw_output_tail": "52 PASS；DATA RACE 0"
+    },
+    {
+      "cmd": "cd gocfsolve && go vet ./...",
+      "exit_code": 0,
+      "raw_output_tail": "（无输出）"
+    },
+    {
+      "cmd": "node scripts/validate-docs.mjs --coverage-json=coverage.json",
+      "exit_code": 0,
+      "raw_output_tail": "12 处文档数字与事实源一致"
+    },
+    {
+      "cmd": "node scripts/validate-findings.mjs",
+      "exit_code": 0,
+      "raw_output_tail": "54 条（confirmed 47 / needs_validation 5 / rejected 2）"
+    },
+    {
+      "cmd": "node scripts/validate-openapi.mjs",
+      "exit_code": 0,
+      "raw_output_tail": "14 个操作与源码一致"
+    },
+    {
+      "cmd": "node scripts/gates.selftest.mjs",
+      "exit_code": 0,
+      "raw_output_tail": "21 条样例全部符合预期"
+    },
+    {
+      "cmd": "python scripts/e2e_local.py --json-out evidence/e2e-local-20261110.json",
+      "exit_code": 0,
+      "raw_output_tail": "40/40 通过（修复前 38/40）"
+    },
+    {
+      "cmd": "CHROME_PATH=... python scripts/verify_ui_e2e.py",
+      "exit_code": 0,
+      "raw_output_tail": "RESULT: 35/35 通过"
+    },
+    {
+      "cmd": "python scripts/hot_update_drill.py --json-out evidence/hot-update-20261110.json",
+      "exit_code": 0,
+      "raw_output_tail": "17/17 通过，50.2s"
+    },
+    {
+      "cmd": "python scripts/loadtest.py --mode hot|cold|share --json",
+      "exit_code": 0,
+      "raw_output_tail": "hot 4926.4 QPS / p99 3.31ms / 0 错；cold 0 拒绝 1.0 次求解/请求；share 1 次/轮"
+    },
+    {
+      "cmd": "cd site && npm run lint && npm run typecheck && NEXT_PUBLIC_SITE_URL=https://ci.cf-solver.dev npm run build",
+      "exit_code": 0,
+      "raw_output_tail": "19 路由；check-out OK（12 可索引 / 2 noindex / 404）"
+    },
+    {
+      "cmd": "cd site && npm run csp && npm run verify:csp",
+      "exit_code": 0,
+      "raw_output_tail": "17 html files, 20 hashes"
+    },
+    {
+      "cmd": "cd site && npm run test:content && npm run test:tokens && npm run test:contrast && npm run test:seo",
+      "exit_code": 0,
+      "raw_output_tail": "content 11/11；tokens 34 files 0；contrast OK；seo 12 rows 4 days"
+    },
+    {
+      "cmd": "cd site && npm run verify:site && npm run test:e2e",
+      "exit_code": 0,
+      "raw_output_tail": "routes 14 / axe 0；e2e 19 passed"
+    },
+    {
+      "cmd": "npx lhci autorun（桌面/移动）",
+      "exit_code": 0,
+      "raw_output_tail": "桌面 100/100/100/100 ×2；移动 97/99/100/100"
+    },
+    {
+      "cmd": "python scripts/check_repo_hygiene.py",
+      "exit_code": 0,
+      "raw_output_tail": "403 个跟踪文件无运行产物"
+    }
+  ],
+  "real_machine_batch": {
+    "batch": "R-E2E-4",
+    "target": "https://www.scrapingcourse.com/cloudflare-challenge",
+    "requests": 2,
+    "successes": 0,
+    "ledger": "60 / 80（累计失败 3 / 5）",
+    "results": {
+      "R-1": "blocked: cloakbrowser needs a license key",
+      "R-2": "partial: audit + egress verified, no clearance",
+      "R-3": "blocked: challenge did not reach stage2 within 240s"
+    }
+  },
+  "git": {
+    "commits": [
+      "1cca605",
+      "fab164c"
+    ],
+    "pushed": "d8a410c..fab164c → origin/master",
+    "tags": [
+      "v6.4.1",
+      "v6.4.2"
+    ],
+    "releases": [
+      "https://github.com/lza6/CF-Bypass-Research/releases/tag/v6.4.1",
+      "https://github.com/lza6/CF-Bypass-Research/releases/tag/v6.4.2"
+    ],
+    "note": "v6.4.1 的 site-ci 为红（站点版本页未同步），按 policy.md 默认发补丁版 v6.4.2；未移动任何 tag"
+  },
+  "limitations": [
+    "Public deployment (D-1) not executed: wrangler not logged in, no CLOUDFLARE_API_TOKEN / ACCOUNT_ID.",
+    "Search-platform verification and keyword volumes (D-2) not executed: no accounts, no volume source.",
+    "English native-speaker sign-off (D-3) not executed: needs a human reviewer.",
+    "R-1 / R-3 blocked on external resources (license key; a stage2-reaching cfsolve sample).",
+    "Local environment gained cloakbrowser 0.7.2 (unlicensed) and Playwright chromium rev 1254."
+  ]
+}
