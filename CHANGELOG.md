@@ -1,3 +1,19 @@
+## [6.4.2] - 2026-11-10
+
+主题：**站点版本页跟上事实源**。v6.4.1 的 `site-ci` 变红：`/changelog` 的头条还停在 6.4.0，
+与 `docs/facts.json` 的 6.4.1 不一致。
+
+### 修复
+
+- `site/content/site.ts`：中英 `/changelog` 补 6.4.1 / 6.4.2 条目，标题与描述同步；
+  `updatedAt` → 2026-11-10（同时满足 description 80–160 字符与 title ≤60 的 content 门禁）。
+- `site/data/benchmarks.ts`：`tests.python` 1065 → **1066**。
+
+### 验证
+
+`test:content` **11/11**、`verify:csp` 17 HTML / 20 hash、`verify:site` 14 路由 / axe 0、
+`test:e2e` **19/19**、lint / typecheck / build 全绿。
+
 ## [6.4.1] - 2026-11-10
 
 主题：**依赖"装上了但用不了"归位**。`pip install cloakbrowser` 成功但没有许可证时，

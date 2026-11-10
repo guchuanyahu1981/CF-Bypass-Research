@@ -2,7 +2,7 @@
   "_generated_by": "scripts/validate-docs.mjs --write",
   "_note": "文档里出现的测试数/覆盖率/结论条数必须与本文件一致（由 validate-docs.mjs 校验）。测试数/覆盖率/条数由 --write 重新测量；**version 例外：它是一次人为的发版决定，--write 不会覆盖它**，升版时手动改本文件 + CHANGELOG + docs/openapi.json + Dockerfile + docker-compose.yml 五处。\nmodule_coverage 的键集合就是\"哪些模块的数字被文档引用\"的清单（--write 只重测已登记的模块）；service_py_lines 由源文件实时数出。",
   "_measured_at": "2026-11-10",
-  "version": "6.4.1",
+  "version": "6.4.2",
   "python_tests": 1066,
   "python_coverage_percent": 90,
   "go_tests": 52,

@@ -1,6 +1,6 @@
 {
   "base": "http://127.0.0.1:3100",
-  "generatedAt": "2026-11-10T10:50:43.932Z",
+  "generatedAt": "2026-11-10T14:09:09.237Z",
   "routes": [
     {
       "route": "/",
@@ -65,9 +65,9 @@
     {
       "route": "/changelog/",
       "lang": "zh-CN",
-      "title": "版本记录 — CF Solver｜6.4.0",
+      "title": "版本记录 — CF Solver｜6.4.2",
       "h1": 1,
-      "description": "6.4.0 工程债一轮：/detect 审计、HTTP 方法语义、契约补全、前端内核去重；另有 6.3.2 独立审查修复、6.3.0 出口实测、6.2.2 看门狗与 6.2.0 YesCaptcha 兼容层。完整历史见 CHANGELOG.md。",
+      "description": "6.4.2 站点版本页跟上事实源；6.4.1 依赖归位：装了但没登录的 cloakbrowser 不再报 500，改为 503 not-configured。另有 6.4.0 工程债一轮、6.3.2 审查修复、6.3.0 出口实测。",
       "canonical": "https://ci.cf-solver.dev/changelog/",
       "alternates": 3,
       "robots": "",
@@ -149,9 +149,9 @@
     {
       "route": "/en/changelog/",
       "lang": "en",
-      "title": "Changelog — CF Solver | 6.4.0",
+      "title": "Changelog — CF Solver | 6.4.2",
       "h1": 1,
-      "description": "6.4.0 engineering-debt round: /detect audit, HTTP method semantics, contract completeness, shared front-end core; plus 6.3.2 review fixes and 6.3.0 egress.",
+      "description": "6.4.2 syncs the site changelog to the facts file; 6.4.1 returns 503 for an unlicensed cloakbrowser instead of 500; plus 6.4.0 engineering-debt and 6.3.2 fixes.",
       "canonical": "https://ci.cf-solver.dev/en/changelog/",
       "alternates": 3,
       "robots": "",
