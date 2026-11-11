@@ -1,0 +1,158 @@
+{
+  "task_id": "RELEASE-6.4.3",
+  "status": "done",
+  "timestamp": "2026-11-11T09:45:00+08:00",
+  "baseline_commit": "83028f2",
+  "goal": "完成 2026-11-11 全量验收复核：真实运行 Python / Go / 门禁 / 真进程 E2E / 浏览器 E2E / 站点 / 压测 / Lighthouse，把结果固化为证据与 v6.4.3 发布；本轮不改产品代码，不部署公开站。",
+  "review_findings": {
+    "critical": [],
+    "fixed": [
+      "P1: CHANGELOG referenced evidence/RELEASE-6.4.3.json and plans/证据/验收报告-2026-11-11.md before they were committed — both are now in the release tag commit",
+      "P2: LCP was written as 0.32s/0.29s; raw Lighthouse JSON says 334.19ms / 296.05ms — corrected to 0.334s/0.296s in CHANGELOG and the status document",
+      "P3: UI E2E 35/35 had no 2026-11-11 text evidence — added plans/证据/ui-v1/ui-e2e-20261111.txt",
+      "P3: loadtest raw JSON lacked run metadata — added evidence/loadtest-20261111-manifest.json with commands, exit codes, finish times and raw output paths",
+      "P3: CHANGELOG evidence list omitted hot-update and loadtest files — added",
+      "P3: status document §4.4 review record and §3.3 header date updated for the 2026-11-11 review"
+    ],
+    "recorded_not_fixed": [
+      "scripts/hot_update_drill.py writes a normalized command string without --json-out into its evidence; the acceptance report records the actual invocation. Changing the script would violate the no-product-code-change scope of this release."
+    ]
+  },
+  "commands_executed": [
+    {
+      "cmd": "python -m pytest tests/ -q --cov=solver --cov=captchas/ --cov-report=json:coverage.json",
+      "exit_code": 0,
+      "raw_output_tail": "1058 passed, 8 skipped in 147.15s (0:02:27); Coverage JSON written to coverage.json"
+    },
+    {
+      "cmd": "node scripts/check-coverage.mjs --coverage-json=coverage.json",
+      "exit_code": 0,
+      "raw_output_tail": "solver/ 89.93% (gate 80%) / captchas/ 22.21% (gate 20%) / 65 modules all pass"
+    },
+    {
+      "cmd": "cd gocfsolve && go vet ./...",
+      "exit_code": 0,
+      "raw_output_tail": "(no output)"
+    },
+    {
+      "cmd": "cd gocfsolve && go test -count=1 -race ./...",
+      "exit_code": 0,
+      "raw_output_tail": "ok github.com/lza6/CF-Bypass-Research/gocfsolve 10.314s; 52 Test* functions"
+    },
+    {
+      "cmd": "python -m compileall -q solver scripts tests captchas",
+      "exit_code": 0,
+      "raw_output_tail": "(no output)"
+    },
+    {
+      "cmd": "node scripts/validate-docs.mjs --coverage-json=coverage.json",
+      "exit_code": 0,
+      "raw_output_tail": "12 document numbers match docs/facts.json; version warning expected before tagging"
+    },
+    {
+      "cmd": "node scripts/validate-findings.mjs",
+      "exit_code": 0,
+      "raw_output_tail": "54 findings (confirmed 47 / needs_validation 5 / rejected 2)"
+    },
+    {
+      "cmd": "node scripts/validate-openapi.mjs",
+      "exit_code": 0,
+      "raw_output_tail": "14 operations match source routes; auth declarations and version consistent"
+    },
+    {
+      "cmd": "node scripts/gates.selftest.mjs",
+      "exit_code": 0,
+      "raw_output_tail": "21 samples behave as expected"
+    },
+    {
+      "cmd": "python scripts/e2e_local.py --json-out evidence/e2e-local-20261111.json",
+      "exit_code": 0,
+      "raw_output_tail": "40/40 passed in 31.2s"
+    },
+    {
+      "cmd": "CHROME_PATH=... python scripts/verify_ui_e2e.py",
+      "exit_code": 0,
+      "raw_output_tail": "RESULT: 35/35 通过; log: plans/证据/ui-v1/ui-e2e-20261111.txt"
+    },
+    {
+      "cmd": "python scripts/hot_update_drill.py --json-out evidence/hot-update-20261111.json",
+      "exit_code": 0,
+      "raw_output_tail": "17/17 passed in 52.7s"
+    },
+    {
+      "cmd": "python scripts/loadtest.py --mode hot|cold|share --json",
+      "exit_code": 0,
+      "raw_output_tail": "hot 4929 QPS / p50 1.54ms / p99 3.43ms / 0 errors; cold 8/8 accepted 0 rejected 1.0 solve/request; share 4 processes x 3 rounds = 1 solve per round"
+    },
+    {
+      "cmd": "cd site && npm run lint && npm run typecheck && NEXT_PUBLIC_SITE_URL=https://ci.cf-solver.dev npm run build && npm run csp && npm run verify:csp && npm run verify:out && npm run test:content && npm run test:tokens && npm run test:contrast && npm run test:seo",
+      "exit_code": 0,
+      "raw_output_tail": "20 static pages; check-out OK 12 indexable / 2 noindex / 404 noindex / OG 1200x630; 17 HTML / 20 hashes; content 11/11; tokens 34 files 0 hardcoded; contrast OK; SEO 12 rows 5 days"
+    },
+    {
+      "cmd": "cd site && npm run verify:site",
+      "exit_code": 0,
+      "raw_output_tail": "routes checked: 14; axe violations: 0; reduced-motion static; webgl-disabled static"
+    },
+    {
+      "cmd": "cd site && npm run test:e2e",
+      "exit_code": 0,
+      "raw_output_tail": "19 passed (18.1s)"
+    },
+    {
+      "cmd": "cd site && CHROME_PATH=... npx lhci autorun",
+      "exit_code": 0,
+      "raw_output_tail": "zh/en desktop: performance/accessibility/best-practices/seo all 1.0; LCP 334.19ms / 296.05ms; CLS 4.66e-7; TBT 0"
+    },
+    {
+      "cmd": "cd site && npm audit --omit=dev --registry=https://registry.npmjs.org",
+      "exit_code": 0,
+      "raw_output_tail": "found 0 vulnerabilities"
+    },
+    {
+      "cmd": "python scripts/check_repo_hygiene.py",
+      "exit_code": 0,
+      "raw_output_tail": "[OK] no runtime artifacts among tracked files"
+    },
+    {
+      "cmd": "python -m cloakbrowser info",
+      "exit_code": 0,
+      "raw_output_tail": "License: none (a launch needs a key); Binary: None; Installed: False"
+    }
+  ],
+  "real_machine_batch": {
+    "batch": "2026-11-11 acceptance review",
+    "requests": 0,
+    "successes": 0,
+    "ledger": "60 / 80 (cumulative failures 3 / 5)",
+    "results": {
+      "R-1": "blocked: cloakbrowser reports License: none and no binary",
+      "R-2": "partial: audit and egress checks verified on 2026-11-10; no clearance observed",
+      "R-3": "blocked: no stage2 response.decoded.txt; 6 structural assertions still skip",
+      "D-1": "not executed: user decided on 2026-11-11 not to deploy the public site"
+    },
+    "note": "No real-machine budget was consumed in this round; previous evidence files are referenced unchanged."
+  },
+  "git": {
+    "commits": [
+      "446cdd0"
+    ],
+    "pushed": "83028f2..master",
+    "tags": [
+      "v6.4.3"
+    ],
+    "releases": [
+      "https://github.com/lza6/CF-Bypass-Research/releases/tag/v6.4.3"
+    ],
+    "note": "v6.4.3 tag points to the docs(release) commit that carries this evidence and the acceptance report; no force push, no tag move."
+  },
+  "limitations": [
+    "Public deployment (D-1) not executed by explicit user decision on 2026-11-11; local deployability was verified.",
+    "Search-platform verification and keyword volumes (D-2) not executed: no accounts, no volume source.",
+    "English native-speaker sign-off (D-3) not executed: needs a human reviewer.",
+    "R-1 / R-3 remain blocked on external resources (license key; a stage2-reaching cfsolve sample).",
+    "Mobile Lighthouse was not re-run; historical records differ (97/99/100/100 vs 98/100/100/100).",
+    "Load tests do not instrument CPU, memory or connection counts; hot mode measures the local replay path.",
+    "Global Python environment has unrelated frida-tools/gradio dependency warnings; the project test suite passes."
+  ]
+}
