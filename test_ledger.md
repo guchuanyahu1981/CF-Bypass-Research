@@ -1,22 +1,22 @@
 # 测试台账（test ledger）
 
 > 一个验收项对应哪些用例、跑在哪个文件、当前是否真跑过。没跑过的不许写"通过"。
-> 数字口径：**2026-11-05 · v6.3.0 · 本机 Python 3.14.3 / Go 1.26.1 / Windows 10**
+> 数字口径：**2026-11-11 · v6.4.3 · 本机 Python 3.14.3 / Go 1.26.1 / Windows 10**
 
 ## 1. 总览
 
 | 层 | 数量 | 命令 | 最近结果 |
 |---|---|---|---|
-| Python 用例 | **1066** | `python -m pytest tests/ -q` | 1058 passed + 8 skipped（本机装了 cloakbrowser，缺失依赖场景转 skip） |
-| Python 覆盖率 | **89%**（`solver/` 整体；`captchas/` 整体 22%，逐模块门禁见 `docs/coverage-policy.json`） | `... --cov=solver --cov=captchas --cov-report=json:coverage.json` + `node scripts/check-coverage.mjs` | solver 24 + captchas 40 模块门槛全通过 |
-| Go 用例 | **52 个 Test** | `cd gocfsolve && go test -count=1 -race ./...` | 全部 PASS |
+| Python 用例 | **1066** | `python -m pytest tests/ -q` | 1058 passed + 8 skipped（2026-11-11 复跑；本机装了 cloakbrowser，缺失依赖场景转 skip） |
+| Python 覆盖率 | **89.93%**（`solver/` 整体；`captchas/` 整体 22.21%，逐模块门禁见 `docs/coverage-policy.json`） | `... --cov=solver --cov=captchas --cov-report=json:coverage.json` + `node scripts/check-coverage.mjs` | 65 个模块门槛全通过（2026-11-11 复跑） |
+| Go 用例 | **52 个 Test** | `cd gocfsolve && go test -count=1 -race ./...` | 全部 PASS（2026-11-11 复跑） |
 | Go 静态检查 | — | `cd gocfsolve && go vet ./...` | 无输出 |
 | 结论库校验 | **54 条** | `node scripts/validate-findings.mjs` | exit 0 |
 | E2E 冒烟 | 3 个断言 | `.\run.ps1 smoke` | ✅ |
-| **E2E 真进程** | **40 项断言** | `.\run.ps1 e2e`（= `python scripts/e2e_local.py`） | **40/40**，落盘 `evidence/e2e-local.json` |
-| **热更新/滚动重启演练** | **17 项断言** | `python scripts/hot_update_drill.py` | **17/17**，落盘 `evidence/hot-update.json` |
+| **E2E 真进程** | **40 项断言** | `.\run.ps1 e2e`（= `python scripts/e2e_local.py`） | **40/40**（31.2s），落盘 `evidence/e2e-local-20261111.json` |
+| **热更新/滚动重启演练** | **17 项断言** | `python scripts/hot_update_drill.py` | **17/17**（52.7s，2026-11-11 复跑），落盘 `evidence/hot-update-20261111.json` |
 | 容器 E2E | 3 worker + 6 端点 + 滚动 | `docker compose up -d` | 见 `evidence/v47-container.md` |
-| 离线压测 | 3 模式 | `python scripts/loadtest.py` | hot **5959.6 QPS** / cold 16/16 / share 3 solves |
+| 离线压测 | 3 模式 | `python scripts/loadtest.py` | hot **4929 QPS** / p99 3.43ms / cold 8/8 零拒绝 / share 每轮 1 solve（2026-11-11 复跑） |
 
 ## 2. 验收项 → 用例映射
 

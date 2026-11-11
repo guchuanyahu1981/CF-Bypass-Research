@@ -1,0 +1,13 @@
+{
+  "mode": "hot",
+  "workers": 8,
+  "duration_sec": 10.0,
+  "requests": 49300,
+  "errors": 0,
+  "qps": 4929.0,
+  "p50_ms": 1.54,
+  "p90_ms": 2.42,
+  "p99_ms": 3.43,
+  "verdict": "PASS",
+  "acceptance": "稳态回放 ≥50 QPS（E2）"
+}

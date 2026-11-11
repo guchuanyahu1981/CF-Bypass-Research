@@ -1,3 +1,27 @@
+## [6.4.3] - 2026-11-11
+
+主题：**全量验收复核**。本轮不改产品代码，把 2026-11-11 的全量验收结果固化为可复核的证据与基线。
+
+### 验收
+
+- Python：1058 passed / 8 skipped（1066 收集）；`solver/` 覆盖率 **89.93%**、`captchas/` **22.21%**，65 个模块全部达到各自门禁。
+- Go：`go vet` 无输出；`go test -count=1 -race ./...` 的 **52 个 `Test*`** 全绿。
+- 门禁：`validate-docs` 12 处一致、`validate-findings` 54 条、`validate-openapi` 14 个操作、`gates.selftest` 21/21、`check_repo_hygiene` 干净。
+- 真进程 E2E：`scripts/e2e_local.py` **40/40**（31.2s，`evidence/e2e-local-20261111.json`）；两页真 Chrome E2E **35/35**；热更新演练 **17/17**（52.7s，`evidence/hot-update-20261111.json`）。
+- 公开站：构建 + CSP（17 HTML / 20 hash）+ `verify:out`（12 可索引 / 2 noindex / 404 noindex）+ `verify:site`（14 路由 / axe 0）+ Playwright **19/19** + content **11/11** + Lighthouse 桌面 **100/100/100/100**（中英两页，LCP 0.334s/0.296s，CLS≈0，TBT 0）。
+- 离线压测：hot **4929 QPS** / p50 1.54ms / p99 3.43ms / 0 错；cold 8/8 接受、0 拒绝、1.0 次求解/请求；share 4 进程两阶段均每轮只解 1 次。
+
+### 待授权项复核（2026-11-11）
+
+- R-1 仍受阻：`cloakbrowser info` 报 `License: none`，二进制未安装。
+- R-2 维持部分闭环：审计与出口联动已验证，clearance 未拿到。
+- R-3 维持受阻：无 `response.decoded.txt`，6 条 stage2 结构断言仍 skip。
+- D-1 / D-2 / D-3 不执行：用户 2026-11-11 明确本轮不部署公开站；Search Console 账号与英文母语审校仍不在本机。
+
+### 证据
+
+`evidence/e2e-local-20261111.json`、`evidence/hot-update-20261111.json`、`evidence/loadtest-20261111-{hot,cold,share}.json` 与同批 manifest、`evidence/RELEASE-6.4.3.json`、`plans/证据/验收报告-2026-11-11.md`、`plans/证据/ui-v1/ui-e2e-20261111.txt`；`plans/证据/ui-v1/site-verify.json` 与两页截图由本轮 E2E 重新生成。
+
 ## [6.4.2] - 2026-11-10
 
 主题：**站点版本页跟上事实源**。v6.4.1 的 `site-ci` 变红：`/changelog` 的头条还停在 6.4.0，

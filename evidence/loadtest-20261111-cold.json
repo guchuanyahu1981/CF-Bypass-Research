@@ -1,0 +1,17 @@
+{
+  "mode": "cold",
+  "workers": 8,
+  "solve_delay_sec": 0.2,
+  "requests": 8,
+  "accepted": 8,
+  "rejected": 0,
+  "errors": 0,
+  "accepted_ratio": 1.0,
+  "solver_calls": 8,
+  "solves_per_request": 1.0,
+  "wall_sec": 0.22,
+  "p50_ms": 203.42,
+  "p99_ms": 215.75,
+  "verdict": "PASS",
+  "acceptance": "冷路径不被拒（E1 机制）"
+}

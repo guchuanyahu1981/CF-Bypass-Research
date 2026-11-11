@@ -101,7 +101,7 @@ export const SITE = {
   repo: 'https://github.com/lza6/CF-Bypass-Research',
   license: 'MIT',
   owner: 'lza6',
-  updatedAt: '2026-11-10',
+  updatedAt: '2026-11-11',
 } as const;
 
 export const PAGES: Record<PageKey, { zh: string; en: string; index: boolean; nav: boolean }> = {
@@ -146,9 +146,9 @@ const zh: Dict = {
         '仅用于安全研究与授权测试。说明授权边界、数据处理、披露方式、与 Cloudflare, Inc. 的非关联声明与免责声明；不提供目标清单、批量扫描入口或绕过访问控制的教程。',
     },
     changelog: {
-      title: '版本记录 — CF Solver｜6.4.2',
+      title: '版本记录 — CF Solver｜6.4.3',
       description:
-        '6.4.2 站点版本页跟上事实源；6.4.1 依赖归位：装了但没登录的 cloakbrowser 不再报 500，改为 503 not-configured。另有 6.4.0 工程债一轮、6.3.2 审查修复、6.3.0 出口实测。',
+        '6.4.3 全量验收复核：1066 用例、89.93% 覆盖率、40 项真进程 E2E、站点 19 项浏览器 E2E 与 Lighthouse 100×4 全部复跑通过，无产品代码变更。',
     },
   },
   nav: {
@@ -345,6 +345,11 @@ const zh: Dict = {
     lede: '只列能力变化，不列营销数字。完整变更见仓库 CHANGELOG.md。',
     items: [
       {
+        version: '6.4.3',
+        date: '2026-11-11',
+        body: '全量验收复核：Python 1066 用例、65 模块覆盖率门禁、40 项真进程 E2E、站点 19 项浏览器 E2E 与 Lighthouse 100×4 全部通过；无产品代码变更。',
+      },
+      {
         version: '6.4.2',
         date: '2026-11-10',
         body: '站点版本页跟上事实源：/changelog 与 docs/facts.json 同步，content 门禁转绿。',
@@ -426,9 +431,9 @@ const en: Dict = {
         'For security research and authorized testing only. Authorization boundaries, data handling, disclosure, non-affiliation, and disclaimer.',
     },
     changelog: {
-      title: 'Changelog — CF Solver | 6.4.2',
+      title: 'Changelog — CF Solver | 6.4.3',
       description:
-        '6.4.2 syncs the site changelog to the facts file; 6.4.1 returns 503 for an unlicensed cloakbrowser instead of 500; plus 6.4.0 engineering-debt and 6.3.2 fixes.',
+        '6.4.3 re-runs full acceptance: 1066 Python tests, 65 coverage gates, 40 process E2E, 19 site E2E and Lighthouse 100 on both locales. No product code changed.',
     },
   },
   nav: {
@@ -624,6 +629,7 @@ const en: Dict = {
     title: 'Changelog',
     lede: 'Capability changes only, not marketing numbers. The full history is in CHANGELOG.md.',
     items: [
+      { version: '6.4.3', date: '2026-11-11', body: 'Full acceptance re-run: 1066 Python tests, 65 coverage gates, 40 process E2E, 19 site browser E2E and Lighthouse 100 on both locales. No product code changed.' },
       { version: '6.4.2', date: '2026-11-10', body: 'The site changelog now tracks the facts file, so the content gate that went red on 6.4.1 is green.' },
       { version: '6.4.1', date: '2026-11-10', body: 'Dependency fix: cloakbrowser installed without a license now returns 503 not-configured with a login hint instead of a 500; test counts, coverage and version stay in one facts file.' },
       { version: '6.4.0', date: '2026-11-09', body: 'Engineering-debt round: /detect is audited, HEAD/OPTIONS/405 semantics are complete, error codes and OpenAPI gained the missing branches, and the two pages share one front-end core.' },

@@ -1,0 +1,35 @@
+{
+  "task_id": "LOADTEST-20261111",
+  "status": "done",
+  "timestamp": "2026-11-11T09:04:00+08:00",
+  "baseline_commit": "83028f2",
+  "commands_executed": [
+    {
+      "cmd": "python scripts/loadtest.py --mode hot --json",
+      "exit_code": 0,
+      "finished_at": "2026-11-11T09:04:17+08:00",
+      "raw_output_file": "evidence/loadtest-20261111-hot.json",
+      "result": "PASS: 49300 requests / 4929 QPS / p50 1.54ms / p99 3.43ms / 0 errors"
+    },
+    {
+      "cmd": "python scripts/loadtest.py --mode cold --json",
+      "exit_code": 0,
+      "finished_at": "2026-11-11T09:04:18+08:00",
+      "raw_output_file": "evidence/loadtest-20261111-cold.json",
+      "result": "PASS: 8/8 accepted / 0 rejected / 1.0 solve per request"
+    },
+    {
+      "cmd": "python scripts/loadtest.py --mode share --json",
+      "exit_code": 0,
+      "finished_at": "2026-11-11T09:04:21+08:00",
+      "raw_output_file": "evidence/loadtest-20261111-share.json",
+      "result": "PASS: 4 processes x 3 iterations = 3 solves (one per round, both sequential and burst)"
+    }
+  ],
+  "note": "The three JSON files are the raw stdout of scripts/loadtest.py --json, unmodified (Windows CRLF preserved). This manifest adds the run metadata that the raw output does not carry; finished_at is the file mtime of each raw output.",
+  "limitations": [
+    "CPU, memory and connection counts were not instrumented.",
+    "hot mode measures the local replay path, not real target-site throughput.",
+    "cold has 8 samples; share is 4 processes x 3 rounds."
+  ]
+}

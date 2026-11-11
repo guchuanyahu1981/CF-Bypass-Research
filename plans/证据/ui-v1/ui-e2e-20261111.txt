@@ -1,0 +1,49 @@
+
+[ready]
+  PASS  ready/状态页徽章
+  PASS  ready/状态页无 JS 错误
+  PASS  ready/健康面板有内容
+  PASS  ready/控制台徽章
+  PASS  ready/控制台无 JS 错误
+  PASS  ready/保存按钮写入 token
+  PASS  ready/自动刷新可开启
+  PASS  ready/自动刷新可关闭
+  PASS  ready/320px 状态页无横向溢出
+  PASS  ready/320px 控制台无横向溢出
+  PASS  ready/360px 状态页无横向溢出
+  PASS  ready/360px 控制台无横向溢出
+
+[wedged]
+  PASS  wedged/状态页徽章文字
+  PASS  wedged/状态页徽章有专属类
+  PASS  wedged/徽章是实心红（不是默认深色）
+  PASS  wedged/显示卡死原因
+  PASS  wedged/显示处置动作
+  PASS  wedged/无 JS 错误
+  PASS  wedged/控制台徽章是 wedged
+  PASS  wedged/控制台横幅说明不会自愈
+  PASS  wedged/控制台无 JS 错误
+
+[degraded]
+  PASS  degraded/徽章不是 wedged
+
+[no-token]
+  PASS  无token/状态页横幅指明去哪拿 token
+  PASS  无token/在途面板不是空白
+  PASS  无token/健康信息仍可见（公开）
+  PASS  无token/无 JS 错误（401 是预期）
+
+[audit]
+  PASS  audit/表格渲染出 8 行
+  PASS  audit/含表头
+  PASS  audit/失败行有标记
+  PASS  audit/耗时按秒显示（不是 16530 ms）
+  PASS  audit/列宽未被单列撑爆
+  PASS  audit/无 JS 错误
+  PASS  audit/顶部刷新会带上审计区块
+  PASS  audit/顶部刷新无新增 JS 错误
+
+[unreachable]
+  PASS  不可达/页面加载失败可被捕获
+
+RESULT: 35/35 通过

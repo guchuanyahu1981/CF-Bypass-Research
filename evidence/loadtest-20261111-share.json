@@ -1,0 +1,20 @@
+{
+  "mode": "share",
+  "processes": 4,
+  "iterations": 3,
+  "sequential": {
+    "solves": 3,
+    "hits": 9,
+    "failures": 0,
+    "expected_solves": 3
+  },
+  "burst": {
+    "solves": 3,
+    "hits": 9,
+    "failures": 0,
+    "note": "同时到达同一新域；已有 claims 抢占去重，应当也只解 1 次/轮"
+  },
+  "solves": 3,
+  "verdict": "PASS",
+  "acceptance": "多进程同域只解一次（G2/A3）"
+}

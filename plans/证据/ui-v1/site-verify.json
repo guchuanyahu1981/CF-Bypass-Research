@@ -1,6 +1,6 @@
 {
   "base": "http://127.0.0.1:3100",
-  "generatedAt": "2026-11-10T14:09:09.237Z",
+  "generatedAt": "2026-11-11T01:16:21.728Z",
   "routes": [
     {
       "route": "/",
@@ -65,9 +65,9 @@
     {
       "route": "/changelog/",
       "lang": "zh-CN",
-      "title": "版本记录 — CF Solver｜6.4.2",
+      "title": "版本记录 — CF Solver｜6.4.3",
       "h1": 1,
-      "description": "6.4.2 站点版本页跟上事实源；6.4.1 依赖归位：装了但没登录的 cloakbrowser 不再报 500，改为 503 not-configured。另有 6.4.0 工程债一轮、6.3.2 审查修复、6.3.0 出口实测。",
+      "description": "6.4.3 全量验收复核：1066 用例、89.93% 覆盖率、40 项真进程 E2E、站点 19 项浏览器 E2E 与 Lighthouse 100×4 全部复跑通过，无产品代码变更。",
       "canonical": "https://ci.cf-solver.dev/changelog/",
       "alternates": 3,
       "robots": "",
@@ -149,9 +149,9 @@
     {
       "route": "/en/changelog/",
       "lang": "en",
-      "title": "Changelog — CF Solver | 6.4.2",
+      "title": "Changelog — CF Solver | 6.4.3",
       "h1": 1,
-      "description": "6.4.2 syncs the site changelog to the facts file; 6.4.1 returns 503 for an unlicensed cloakbrowser instead of 500; plus 6.4.0 engineering-debt and 6.3.2 fixes.",
+      "description": "6.4.3 re-runs full acceptance: 1066 Python tests, 65 coverage gates, 40 process E2E, 19 site E2E and Lighthouse 100 on both locales. No product code changed.",
       "canonical": "https://ci.cf-solver.dev/en/changelog/",
       "alternates": 3,
       "robots": "",
