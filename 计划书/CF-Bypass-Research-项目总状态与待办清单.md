@@ -182,7 +182,7 @@
 
 | v6.4.1 真进程 E2E + 独立审查（2026-11-10） | `scripts/e2e_local.py` 全 40 条；独立审查员只读核 `git diff` + `cloakbrowser` 包源码 | **1 P1 已修**：`cloakbrowser` 装上但无许可证时，`multicaptcha.solve_async` 只接 `ImportError`，`CloakBrowserLicenseError` 落到 `INTERNAL` → HTTP **500** + 日志 traceback（A26/A16 两条红）。修法：按"依赖不可用"归 `NOT_CONFIGURED`(503) + 登录提示、不打 traceback；补 1 条单测（先红后绿）。**独立审查 Verdict: Approve**，并按审查意见补三点：许可证路径保留原文日志（不带栈）、归因文案覆盖"缺 key / 过期 / 会话满"、主链启动失败提示不再只提 camoufox。审查另提 2 条**记录不修**（既有缺口，P3）：① 主链"握手后"的许可证拒绝（免费档 1 并发被占）在 `solver/service.py:1146` `new_context()` 抛出，经 `:643` 原样上抛到 `:2544` → `INTERNAL` 500；② key 有效但二进制下载失败（`cloakbrowser/download.py:229`）是普通 `RuntimeError` → 500。两者都要先有可用许可证才能真机触发 |
 | v6.4.2 站点同步（2026-11-10） | v6.4.1 的 `site-ci` 失败日志 | **1 P2 已修**：站点 `/changelog` 头条停在 6.4.0、`tests.python` 仍是 1065，与 `docs/facts.json` 的 6.4.1 / 1066 不一致——版本号只在仓库侧同步，漏了站点内容。修法：中英 `/changelog` 补条目、benchmark 值同步；重跑 `test:content` 11/11、`verify:site` 14 路由 / axe 0、`test:e2e` 19/19 |
-| v6.4.3 全量验收复核（2026-11-11） | 发布候选：五处版本号 / 站点版本页 / 状态文档 / 验收证据 | 首轮 **Request Changes**（1 P1 + 1 P2 + 4 P3，逐条核实成立并修复）：P1 证据文件未入库 → 补齐验收报告与 RELEASE 证据；P2 LCP 0.32/0.29 → 实测 0.334/0.296；P3 UI E2E 文本证据、压测 manifest、CHANGELOG 证据段 → 已补；热更新 cmd 字段记录不改代码。修复后复审 **Verdict: Approve** |
+| v6.4.3 全量验收复核（2026-11-11） | 发布候选：五处版本号 / 站点版本页 / 状态文档 / 验收证据 | 首轮 **Request Changes**（1 P1 + 1 P2 + 4 P3，逐条核实成立并修复）：P1 证据文件未入库 → 补齐验收报告与 RELEASE 证据；P2 LCP 0.32/0.29 → 实测 0.334/0.296；P3 UI E2E 文本证据、压测 manifest、CHANGELOG 证据段 → 已补；热更新 cmd 字段记录不改代码。修复后复审 **Verdict: Approve**；CI：`ci` 42942791503 / `site-ci` 42942797220、42942791511 全绿 |
 
 **Approve 语义**：严格审查后未发现阻塞性问题，不是"代码完美"。新节点标 Done 前必须有 Approve 记录（写进本节）。
 
