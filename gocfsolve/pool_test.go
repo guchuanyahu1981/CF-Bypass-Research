@@ -238,3 +238,33 @@ func TestPoolHealthProbeMarksNodes(t *testing.T) {
 		t.Fatal("健康节点不应被摘除")
 	}
 }
+
+// TestPoolDoReplayFailureDoesNotMarkNode 钉 P3-10：回放侧失败不是求解节点故障。
+// 目标站不可达时两次回放失败不能把健康节点摘掉（否则一组健康求解器会被业务故障拖死）。
+func TestPoolDoReplayFailureDoesNotMarkNode(t *testing.T) {
+	a := newPoolNodeServer(t, "a")
+	defer a.Close()
+
+	p, err := NewPool([]string{a.URL}, WithPoolMaxFailures(1), WithPoolDownDuration(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+
+	for i := 0; i < 2; i++ {
+		req, _ := http.NewRequest(http.MethodGet, "http://127.0.0.1:1/", nil)
+		if _, err := p.Do(context.Background(), req); err == nil {
+			t.Fatal("目标不可达时 Do 应返回错误")
+		}
+	}
+	nodes := p.Nodes()
+	if len(nodes) != 1 {
+		t.Fatalf("节点数不对: %+v", nodes)
+	}
+	if nodes[0].Failures != 0 {
+		t.Fatalf("回放失败不该记成节点故障，实际 Failures=%d", nodes[0].Failures)
+	}
+	if !nodes[0].Healthy {
+		t.Fatal("健康节点不应被摘除")
+	}
+}

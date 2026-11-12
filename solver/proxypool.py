@@ -22,6 +22,7 @@
 from __future__ import annotations
 
 import hashlib
+from concurrent.futures import ThreadPoolExecutor
 import ipaddress
 import re
 import threading
@@ -350,11 +351,12 @@ class EgressCheck:
     observed: str         # 实测 IP（探测失败为空）
     ok: bool
     detail: str
+    latency_ms: float = 0.0   # 实测出口 RTT（区分“慢”和“死”）
 
     def as_dict(self) -> dict:
         return {
             "proxy": self.proxy, "registered": self.registered, "observed": self.observed,
-            "ok": self.ok, "detail": self.detail,
+            "ok": self.ok, "detail": self.detail, "latency_ms": self.latency_ms,
         }
 
 
@@ -364,6 +366,7 @@ def verify_egress(
     echo_url: str = DEFAULT_EGRESS_ECHO_URL,
     timeout: float = 10.0,
     fetch=None,
+    workers: int = 4,
 ) -> list[EgressCheck]:
     """逐个出口实测 IP，并与登记值比对。**只报告，不改池状态**。
 
@@ -380,10 +383,11 @@ def verify_egress(
     `fetch(url, proxy_url, timeout) -> str` 可注入，便于完全离线地测本函数的判定逻辑。
     """
     do_fetch = fetch or _default_fetch
-    out: list[EgressCheck] = []
-    for entry in pool.entries_snapshot():
+
+    def check(entry: dict) -> EgressCheck:
         masked = mask_proxy_url(entry["raw_url"])
         registered = entry["egress_ip"]
+        started = time.monotonic()
         try:
             text = do_fetch(echo_url, entry["raw_url"], timeout)
             observed = parse_echo_ip(text)
@@ -391,6 +395,7 @@ def verify_egress(
         except Exception as e:  # noqa: BLE001 —— 探测失败是预期情形之一，不往上抛
             observed = ""
             err = f"{type(e).__name__}: {str(e)[:120]}"
+        latency_ms = round((time.monotonic() - started) * 1000.0, 1)
 
         if not registered and observed:
             ok, detail = True, f"未登记，实测 {observed}；建议用 --proxy-egress-ip 登记（否则退回地址哈希）"
@@ -403,5 +408,12 @@ def verify_egress(
                                  "缓存键会错位 → 凭证可能发给错出口 → 静默 403")
         else:
             ok, detail = True, f"已登记 {registered}，但探测失败：{err}（无法确认，建议手工复核）"
-        out.append(EgressCheck(masked, registered, observed, ok, detail))
-    return out
+        return EgressCheck(masked, registered, observed, ok, detail, latency_ms)
+
+    entries = pool.entries_snapshot()
+    workers = min(8, max(1, int(workers)))
+    if len(entries) <= 1 or workers == 1:
+        return [check(e) for e in entries]
+    # 出口探活是纯 I/O；串行会让池大时线性叠加（参考 proxypool 的并发 tester）。
+    with ThreadPoolExecutor(max_workers=min(workers, len(entries))) as executor:
+        return list(executor.map(check, entries))

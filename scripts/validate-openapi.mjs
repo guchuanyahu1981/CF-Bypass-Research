@@ -187,6 +187,19 @@ function main() {
   }
 
   // ---- 规则 2：鉴权声明 ----
+  // 顶层 security 是“所有未显式覆盖的操作”的默认鉴权。删掉它（或写成 [{}]）后，
+  // 规格里每个受保护操作都会变成无鉴权，而下面的逐操作检查只看到 `op.security === undefined`
+  // —— 旧实现因此静默通过。必须先钉住顶层本身。
+  const topSecurity = spec.security;
+  const topHasBearer =
+    Array.isArray(topSecurity) &&
+    topSecurity.some((req) => req && Object.prototype.hasOwnProperty.call(req, "bearerAuth"));
+  if (!topHasBearer) {
+    problem(
+      "docs/openapi.json",
+      "顶层 security 缺失或没有 bearerAuth：所有未显式覆盖的操作会被读成无鉴权",
+    );
+  }
   for (const [path, item] of Object.entries(spec.paths ?? {})) {
     for (const [method, op] of Object.entries(item ?? {})) {
       const upper = method.toUpperCase();
@@ -236,6 +249,32 @@ function main() {
             );
           }
         }
+      }
+    }
+  }
+
+  // ---- 规则 5：Go 客户端读取的成功字段必须在 SolveResponse 里声明 ----
+  // 只比路由/状态码还不够：Go 客户端按 `Clearance` 的 json tag 读产物，
+  // 规格里没声明的字段，spec 驱动的客户端就拿不到（v6.4.3 曾缺 cf_clearance 等 9 个）。
+  const GO_PATH = resolve(ROOT, "gocfsolve/cfsolve.go");
+  if (existsSync(GO_PATH)) {
+    const go = readFileSync(GO_PATH, "utf8");
+    const body = go.match(/type Clearance struct \{([\s\S]*?)\n\}/)?.[1] ?? "";
+    const keys = [...body.matchAll(/json:"([^",]+)/g)]
+      .map((m) => m[1])
+      .filter((k) => k && k !== "-");
+    const respBody = go.match(/type solveResp struct \{([\s\S]*?)\n\}/)?.[1] ?? "";
+    const errorOnly = new Set(["error", "error_code", "stage", "hint"]);
+    const respKeys = [...respBody.matchAll(/json:"([^",]+)/g)]
+      .map((m) => m[1])
+      .filter((k) => k && k !== "-" && !errorOnly.has(k));
+    const props = spec.components?.schemas?.SolveResponse?.properties ?? {};
+    for (const key of [...keys, ...respKeys]) {
+      if (!Object.prototype.hasOwnProperty.call(props, key)) {
+        problem(
+          "docs/openapi.json",
+          `SolveResponse 缺 Go 客户端读取的字段 ${key}（spec 驱动客户端拿不到该产物）`,
+        );
       }
     }
   }

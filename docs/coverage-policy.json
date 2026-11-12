@@ -38,8 +38,8 @@
       "why": "子进程入口：main() 的结果行契约由测试覆盖"
     },
     "captchas/aliyun/gap_cv.py": {
-      "min": 7,
-      "why": "经典 CV 间隙检测；需要真实滑块图，本仓库不含样本"
+      "min": 70,
+      "why": "经典 CV 缺口检测：合成图形可测（模板匹配坐标、退化分支，见 tests/test_captcha_pure.py）；真实滑块图仍需真机样本。实测 71.1。"
     },
     "captchas/aliyun/gap_vlm.py": {
       "min": 0,
@@ -58,8 +58,8 @@
       "why": "包入口。惰性导出，只执行到 _EXPORTS 定义（见 test_package_init_is_lazy…）"
     },
     "captchas/arkose/predict.py": {
-      "min": 20,
-      "why": "ONNX 前后的纯函数可测；推理本身需要模型权重（仓库不含）"
+      "min": 34,
+      "why": "ONNX 前处理的纯函数可测（EVP 派生、pair 判定）；真实推理需要模型权重，仓库不含。实测 35.3。"
     },
     "captchas/arkose/solve.py": {
       "min": 7,
@@ -146,8 +146,8 @@
       "why": "包入口。惰性导出，只执行到 _EXPORTS 定义（见 test_package_init_is_lazy…）"
     },
     "captchas/perimeterx/renderers/outlook.py": {
-      "min": 34,
-      "why": "降级链（fill/next）可测；完整导航依赖真浏览器与 Outlook 页面"
+      "min": 56,
+      "why": "Fluent 下拉的选择器回退/索引夹取可测；完整表单导航需要真实 Outlook 页面。实测 57.6。"
     },
     "captchas/perimeterx/solve.py": {
       "min": 18,
@@ -158,12 +158,12 @@
       "why": "包入口。惰性导出，只执行到 _EXPORTS 定义（见 test_package_init_is_lazy…）"
     },
     "captchas/recaptcha/image_solve.py": {
-      "min": 13,
-      "why": "浏览器驱动主体（launch_async + 真实挑战页）不可离线执行；纯函数与包结构由 tests/test_captchas_offline.py 覆盖"
+      "min": 38,
+      "why": "九宫格切片顺序可测（合成网格 + 假 keypool）；浏览器主体（launch_async + 真实挑战页）不可离线执行。实测 39.8。"
     },
     "captchas/recaptcha/onnx_classifier.py": {
-      "min": 37,
-      "why": "目标名归一化可测；模型加载需要权重文件"
+      "min": 47,
+      "why": "目标名归一与 letterbox 预处理可测；模型加权推理需要权重文件。实测 48.0。"
     },
     "captchas/recaptcha/solve.py": {
       "min": 12,
@@ -194,8 +194,8 @@
       "why": "参数解析/装配/信号/优雅退出；曾因这一块没有测试而漏掉 NameError（38% → 87%）"
     },
     "solver/cache.py": {
-      "min": 82,
-      "why": "加密落盘 + WAL + claims 抢占"
+      "min": 84,
+      "why": "落盘加密 + WAL + claims 抢占。P3-01 新增 MemoryStore/清理/权限错误分支测试后实测 86.35；min 上调到 84。"
     },
     "solver/cfsolve_backend.py": {
       "min": 90,
@@ -214,8 +214,8 @@
       "why": "T-78 只读控制台的 HTML/JS 常量：与 statuspage.py 同性质（常量非逻辑），契约由 tests/test_console.py 的 9 条用例守住（401/无写面/CSP/no-store/不含 token/白名单渲染/四区块空态/无外部资源）"
     },
     "solver/detect.py": {
-      "min": 97,
-      "why": "防护识别；结论错=白烧 16-20s 浏览器（结论本身另由 tests/test_detect_golden.py 兜住）"
+      "min": 95,
+      "why": "防护识别；v6.4.3 新增 Shape 动态头族/seed 与 Akamai 脚本标记分支，实测 95.0% 是 floor；结论错=白烧 16-20s 浏览器（另有 test_detect_golden 兜住）"
     },
     "solver/engines.py": {
       "min": 95,
@@ -253,6 +253,18 @@
       "min": 83,
       "why": "CDP 直连后端；未装 pydoll/Chrome 时只能测缺依赖分支"
     },
+    "solver/client.py": {
+      "min": 81,
+      "why": "MCP 适配器的本地 HTTP 客户端：成功/HTTPError/URLError/fetch 摘要由 tests/test_mcp_server.py 覆盖；未覆盖的是少数兜底分支（title 缺失、spill 失败）"
+    },
+    "solver/mcp_server.py": {
+      "min": 88,
+      "why": "MCP stdio 协议层：initialize/tools/list/tools/call/5 工具/resources/main 循环由 tests/test_mcp_server.py 覆盖；未覆盖的是个别错误分支"
+    },
+    "solver/ratelimit.py": {
+      "min": 95,
+      "why": "按域令牌桶（默认关）：纯逻辑，tests/test_ratelimit.py 覆盖 refill/按域隔离/有界/默认关/缓存命中不消耗/路由侧计数"
+    },
     "solver/request.py": {
       "min": 98,
       "why": "请求参数校验（D1 下沉的纯函数）：每个边界都直接对应一个对外 4xx 契约"
@@ -262,8 +274,8 @@
       "why": "route=auto 决策表：纯函数，没有理由低于 98"
     },
     "solver/service.py": {
-      "min": 83,
-      "why": "HTTP 层 + Solver 状态机（2286 行；D1 已把请求解析下沉到 request.py）"
+      "min": 85,
+      "why": "HTTP 层 + Solver 状态机。P3-01 新增鉴权/body/lines/host 分支测试后实测 86.1；min 上调到 85（留 1 点跨平台余量）。"
     },
     "solver/statuspage.py": {
       "min": 100,

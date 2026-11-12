@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import json  # noqa: F401  （原实现里由 service.py 提供，搬过来要保持同名导入）
+import time
 from urllib.parse import urljoin, urlsplit
 
 try:  # 包导入
@@ -25,6 +26,30 @@ except ImportError:  # 直接以脚本运行
 
 #: `/detect` 跟随重定向的跳数上限
 PROBE_MAX_REDIRECTS = 3
+
+#: 响应体上限与单次读块：慢滴目标每 0.2s 写 1 字节也能被墙钟 deadline 截断。
+#: 旧实现用 `response.read(500_000)`：BufferedReader 会循环 raw read 直到凑满，
+#: 而 socket 超时是**单次 recv**，每次收到 1 字节都会重置 —— 探测线程会被长期占住。
+PROBE_BODY_LIMIT = 500_000
+PROBE_READ_CHUNK = 65_536
+
+
+def _read_bounded(resp, limit: int, deadline: float) -> str:
+    """按墙钟 deadline + 字节上限读响应体；慢滴时返回已读到的部分，绝不无限等。"""
+    chunks: list[bytes] = []
+    total = 0
+    while total < limit and time.monotonic() < deadline:
+        n = min(PROBE_READ_CHUNK, limit - total)
+        try:
+            chunk = resp.read1(n)          # HTTPResponse / BufferedReader
+        except AttributeError:
+            chunk = resp.read(n)           # HTTPError 等只提供 read()
+        if not chunk:
+            break
+        chunks.append(chunk)
+        total += len(chunk)
+    return b"".join(chunks).decode("utf-8", "replace")
+
 
 #: 探测用 UA 的 persona 兜底（浏览器还没起来时用；起来了就用它的真实 UA）
 _PROBE_UA_BY_OS = {
@@ -71,6 +96,7 @@ def probe_protection(url: str, timeout: float = 15.0, *, guard=None, user_agent:
     current = url
     hops = 0
 
+    deadline = time.monotonic() + max(0.1, float(timeout))
     while True:
         if guard is not None:
             guard(current)                 # 每一跳（含首跳）都过守卫
@@ -79,7 +105,7 @@ def probe_protection(url: str, timeout: float = 15.0, *, guard=None, user_agent:
                              timeout=timeout) as response:
                 status = response.status
                 headers = dict(response.headers.items())
-                body = response.read(500_000).decode("utf-8", "replace")
+                body = _read_bounded(response, PROBE_BODY_LIMIT, deadline)
                 final_url = response.geturl() or current
             break
         except urllib.error.HTTPError as e:
@@ -108,7 +134,7 @@ def probe_protection(url: str, timeout: float = 15.0, *, guard=None, user_agent:
             status = e.code
             headers = dict(e.headers.items()) if e.headers else {}
             try:
-                body = e.read(500_000).decode("utf-8", "replace")
+                body = _read_bounded(e, PROBE_BODY_LIMIT, deadline)
             except Exception:  # noqa: BLE001
                 body = ""
             final_url = current

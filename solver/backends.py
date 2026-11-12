@@ -30,8 +30,10 @@ from typing import Protocol
 from urllib.parse import urlsplit
 
 try:  # 包导入
+    from .challenges import CACHEABLE_WANTS, RESULT_FIELD, Want
     from .errors import ErrorCode, SolveError
 except ImportError:  # 直接以脚本运行
+    from challenges import CACHEABLE_WANTS, RESULT_FIELD, Want  # type: ignore[no-redef]
     from errors import ErrorCode, SolveError  # type: ignore[no-redef]
 
 
@@ -267,7 +269,17 @@ class FlareSolverrBackend:
             self._session_ready = False
 
     def solve(self, url: str, timeout: float, force: bool = False, **kwargs) -> dict:
-        # 这个后端只发 GET、只回收 cookie，不支持 want=token 之类的语义（未知参数忽略）
+        # 这个后端只发 GET、只回收 cookie，不支持 want=token 之类的语义。
+        # 必须**显式拒绝**，不能忽略：否则 turnstile 请求会拿到一个 cf_clearance 并回 solved:true，
+        # 调用方按约定读 token 时得到空值（与缓存键缺 want 是同一类静默错值）。
+        want = str(kwargs.get("want") or "clearance").lower()
+        if want != "clearance":
+            raise SolveError(
+                ErrorCode.NOT_CONFIGURED,
+                f"FlareSolverr 后端只支持 want=clearance，不支持 want={want}",
+                stage="admit",
+                hint="把该请求交给 Camoufox/pydoll 主链路；或从这条回落链里去掉 FlareSolverr",
+            )
 
         body = {
             "cmd": "request.get",
@@ -424,7 +436,8 @@ class BackendRouter:
     def backends(self) -> list[str]:
         return [b.name() for b in self._backends]
 
-    def _governed_solve(self, backend, url: str, timeout: float, force: bool, **kwargs) -> dict:
+    def _governed_solve(self, backend, url: str, timeout: float, force: bool,
+                        rate_state: dict | None = None, **kwargs) -> dict:
         """给"不走 Solver.solve"的后端套上统一治理。
 
         三个动作必须成对，漏一个就会回归成 v4.0 的老毛病：
@@ -433,32 +446,41 @@ class BackendRouter:
           ③ 无论成败都 end_backend_call（否则门票泄漏 → 服务"莫名其妙全 busy"）
         """
         gov = self._gov
-        want = str(kwargs.get("want") or "clearance").lower()
-        cacheable = want in ("clearance", "awswaf")   # 一次性 token 绝不缓存（复用必失败）
+        want = str(kwargs.get("want") or "clearance").strip().lower()
+        try:
+            want_enum = Want.parse(want)
+        except ValueError as e:
+            raise SolveError(ErrorCode.INVALID_REQUEST, str(e), stage="validate") from e
+        cacheable = want_enum in CACHEABLE_WANTS       # 一次性 token 绝不缓存（复用必失败）
 
         claimed = False
         if cacheable and not force:
-            hit = gov.cache_lookup(url)
+            hit = gov.cache_lookup(url, want=want)
             if hit is not None:
                 hit.setdefault("backend", backend.name())
                 return hit
+        check_rate = getattr(gov, "check_rate_for", None)
+        if cacheable and not force:
             # 跨进程去重：多个 worker 同时抢同一个新域时只让一个真的解，
             # 其余等对端填好缓存（否则 4 进程 burst 会各解一次，实测 12/12）。
             claim = getattr(gov, "claim_solve", None)
             if callable(claim):
-                claimed = bool(claim(url, timeout))
+                claimed = bool(claim(url, timeout, want=want))
                 if not claimed:
                     wait = getattr(gov, "wait_for_peer", None)
-                    peer = wait(url, timeout) if callable(wait) else None
+                    peer = wait(url, timeout, want=want) if callable(wait) else None
                     if peer is not None:
                         peer.setdefault("backend", backend.name())
                         return peer
 
         if not gov.begin_backend_call():
+            note = getattr(gov, "note_rejected_busy", None)
+            if callable(note):
+                note()
             if claimed:
                 release = getattr(gov, "release_claim_for", None)
                 if callable(release):
-                    release(url)          # 准入被拒也要放行抢占，否则对端要白等 TTL
+                    release(url, want=want)          # 准入被拒也要放行抢占，否则对端要白等 TTL
             raise SolveError(
                 ErrorCode.BUSY, "并发求解数已达上限", stage="admit",
                 hint="降低并发或提高 --max-inflight；注意单进程只串行求解，调大只增加排队深度",
@@ -469,23 +491,66 @@ class BackendRouter:
         except Exception:  # noqa: BLE001
             host = ""
 
+        # 按域刹车放在 claim/wait 和 inflight 之后、真正调用后端之前：
+        # 对端缓存命中、准入 busy 都不该消耗令牌；一次逻辑请求只收一次。
+        if rate_state is not None and not rate_state.get("charged"):
+            try:
+                if callable(check_rate):
+                    check_rate(url)
+                    rate_state["charged"] = True
+            except BaseException:
+                if claimed:
+                    release = getattr(gov, "release_claim_for", None)
+                    if callable(release):
+                        release(url, want=want)
+                # 限流是准入拒绝，不是后端失败：只归还门票，不写 solve/failure 指标。
+                abort = getattr(gov, "abort_backend_call", None)
+                if callable(abort):
+                    abort()
+                raise
+
         started = time.monotonic()
+        # 路由层已经按域收过令牌；Camoufox 后端会转调 Solver.solve，
+        # 不把“已收费”传下去就会同一个请求扣两次（burst=2 时重试直接 429）。
+        kwargs["rate_checked"] = True
         try:
             out = backend.solve(url, timeout=timeout, force=force, **kwargs)
+            field = RESULT_FIELD.get(want_enum)
+            if isinstance(out, dict):
+                out_want = str(out.get("want") or want).strip().lower()
+                if out_want != want:
+                    raise SolveError(
+                        ErrorCode.UNSOLVED,
+                        f"{backend.name()} 返回 want={out_want}，请求的是 {want}",
+                        stage="solve",
+                    )
+                out["want"] = out_want
+            if field and isinstance(out, dict) and not str(out.get(field) or "").strip():
+                # 后端返回 solved:true 却没有对应产物 = 静默错值；当失败处理，别缓存别返回。
+                raise SolveError(
+                    ErrorCode.UNSOLVED,
+                    f"{backend.name()} 未产出 {field}（want={want}）",
+                    stage="solve",
+                    hint="检查后端是否把别的产物冒充成该 want",
+                )
         except BaseException:
             gov.end_backend_call(False, time.monotonic() - started, host=host, backend=backend.name())
             if claimed:
                 release = getattr(gov, "release_claim_for", None)
                 if callable(release):
-                    release(url)      # 失败也要放行其它进程，别让它们白等 claim 的 TTL
+                    release(url, want=want)      # 失败也要放行其它进程，别让它们白等 claim 的 TTL
             raise
         gov.end_backend_call(True, time.monotonic() - started, host=host, backend=backend.name())
         if cacheable and isinstance(out, dict):
-            gov.remember(url, out)
-            if claimed:
-                release = getattr(gov, "release_claim_for", None)
-                if callable(release):
-                    release(url)      # 缓存已就绪，放行其它进程
+            try:
+                gov.remember(url, out, want=want)
+            except Exception:  # noqa: BLE001 —— 缓存写失败不能把已拿到的凭证判成失败
+                pass
+            finally:
+                if claimed:
+                    release = getattr(gov, "release_claim_for", None)
+                    if callable(release):
+                        release(url, want=want)  # 缓存已就绪/写入失败都放行
         return out
 
     def solve(self, url: str, timeout: float, force: bool = False,
@@ -497,6 +562,7 @@ class BackendRouter:
         """
         attempts: list[dict] = []
         last_error: SolveError | None = None
+        rate_state = {"charged": bool(kwargs.pop("rate_checked", False))}
         skip_set = {str(x) for x in (skip or ())}
         if skip_set and all(b.name() in skip_set for b in self._backends if b.is_configured()):
             skip_set = set()          # 全被跳完 → 放弃跳过，正常尝试
@@ -520,9 +586,14 @@ class BackendRouter:
             try:
                 if self._gov is not None and not isinstance(backend, CamoufoxBackend):
                     # 非 Solver 后端：由路由层统一施加缓存 / 准入 / 计数
-                    out = self._governed_solve(backend, url, remaining, force, **kwargs)
+                    out = self._governed_solve(backend, url, remaining, force,
+                                               rate_state=rate_state, **kwargs)
                 else:
-                    out = backend.solve(url, timeout=remaining, force=force, **kwargs)
+                    # Camoufox 自己会在缓存/claim 之后收令牌；前序尝试收过就传下去。
+                    # 在调用前置位：即使它抛 TIMEOUT/UNSOLVED，后续 fallback 也不能再收一次。
+                    already = bool(rate_state["charged"])
+                    out = backend.solve(url, timeout=remaining, force=force,
+                                        rate_checked=already, rate_state=rate_state, **kwargs)
                 out.setdefault("backend", name)
                 out["attempts"] = attempts + [{"backend": name, "ok": True}]
                 return out

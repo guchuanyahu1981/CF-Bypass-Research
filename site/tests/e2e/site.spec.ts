@@ -174,3 +174,44 @@ test('layout shift stays below 0.05', async ({ page }) => {
   await page.waitForTimeout(1500);
   expect(await page.evaluate(() => window.__cls)).toBeLessThan(0.05);
 });
+test('theme toggle switches, persists, and keeps aria-pressed in sync', async ({ page }) => {
+  await page.goto('/', { waitUntil: 'networkidle' });
+  const toggle = page.locator('button.icon-button[aria-pressed]').first();
+  const before = await page.evaluate(() => document.documentElement.dataset.theme);
+  await toggle.click();
+  const after = await page.evaluate(() => document.documentElement.dataset.theme);
+  expect(after).not.toBe(before);
+  await expect(toggle).toHaveAttribute('aria-pressed', after === 'dark' ? 'true' : 'false');
+  await page.reload({ waitUntil: 'networkidle' });
+  expect(await page.evaluate(() => document.documentElement.dataset.theme)).toBe(after);
+  expect(await page.evaluate(() => localStorage.getItem('cf-theme'))).toBe(after);
+});
+
+test('language switch maps zh and en routes both ways', async ({ page }) => {
+  await page.goto('/how-it-works/', { waitUntil: 'networkidle' });
+  let link = page.locator('a.icon-button[hrefLang]').first();
+  await expect(link).toHaveAttribute('href', '/en/how-it-works/');
+  await Promise.all([page.waitForURL(/\/en\/how-it-works\/$/), link.click()]);
+  expect(new URL(page.url()).pathname).toBe('/en/how-it-works/');
+  link = page.locator('a.icon-button[hrefLang]').first();
+  await expect(link).toHaveAttribute('href', '/how-it-works/');
+  await page.waitForLoadState('networkidle');
+  await Promise.all([page.waitForURL(/\/how-it-works\/$/), link.click()]);
+  expect(new URL(page.url()).pathname).toBe('/how-it-works/');
+});
+
+test('mobile menu expands and its links are clickable at 360px', async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 800 });
+  await page.goto('/', { waitUntil: 'networkidle' });
+  const details = page.locator('details.mobile-menu');
+  await expect(details).not.toHaveAttribute('open', '');
+  await details.locator('summary').click();
+  await expect(details).toHaveAttribute('open', '');
+  const links = details.locator('nav a');
+  await expect(links).toHaveCount(6);
+  for (let index = 0; index < 6; index += 1) {
+    const box = await links.nth(index).boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.height).toBeGreaterThan(24);
+  }
+});

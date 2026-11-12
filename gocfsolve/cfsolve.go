@@ -180,18 +180,19 @@ type solveReq struct {
 // 三个字段都留空 = 与旧客户端完全相同的请求（`want` 默认 clearance，`route` 默认 fixed）。
 type SolveOptions struct {
 	Want    string // 产物类型：""=clearance（cf_clearance）、turnstile、recaptcha_v3、awswaf
-	Route   string // 选路模式：""=fixed（默认）、auto、cfsolve、browser
+	Route   string // 选路模式：""=fixed（默认）、auto、direct、pure、browser
 	Sitekey string // want=turnstile/recaptcha_v3/awswaf 时的 sitekey
 }
 
 type solveResp struct {
-	Ok        bool    `json:"ok"`
-	Solved    bool    `json:"solved"`
-	Error     string  `json:"error"`
-	ErrorCode string  `json:"error_code"`
-	Stage     string  `json:"stage"`
-	Hint      string  `json:"hint"`
-	Elapsed   float64 `json:"elapsed"`
+	Ok          bool    `json:"ok"`
+	Solved      bool    `json:"solved"`
+	NoChallenge bool    `json:"no_challenge"`
+	Error       string  `json:"error"`
+	ErrorCode   string  `json:"error_code"`
+	Stage       string  `json:"stage"`
+	Hint        string  `json:"hint"`
+	Elapsed     float64 `json:"elapsed"`
 	Clearance
 }
 
@@ -237,6 +238,10 @@ type Client struct {
 	// 求解走哪个出口，回放就必须走同一个（cf_clearance 绑 IP，换出口 = 静默 403）。
 	proxies       map[string]*url.URL
 	replayClients map[string]*http.Client
+	// egressConfigured 记录“调用方登记过出口代理”，即使 URL 解析失败也算。
+	// 旧实现解析失败直接 return，proxies 保持空 → replayClientFor 把“配置过但没解析出来”
+	// 当成“没配置”，静默走本机直连 —— 与 fail-closed 承诺相反。
+	egressConfigured bool
 
 	mu    sync.Mutex
 	cache map[string]*Clearance // key = host|egressID
@@ -252,6 +257,13 @@ type Client struct {
 // 失败关闭是刻意的：宁可直接报错，也不要从一个与求解时不同的出口发出去 —— 那必然拿到
 // 403，还会被误判成"CF 又改版了"，是最难归因的一类故障。
 var ErrNoEgressProxy = errors.New("出口未登记代理")
+
+// ErrNoChallenge 表示服务端 route=auto 探测后确认"目标站没有挑战"。
+//
+// 这不是失败：调用方应当直接用普通 HTTP 请求目标站，不需要任何凭证。
+// 旧实现只检查 `ok`，会把 `{"ok":true,"solved":false,"no_challenge":true}` 当成
+// "没返回 cf_clearance" 的错误 —— 于是 route=auto/direct 在 Go 侧不可用。
+var ErrNoChallenge = errors.New("目标站没有可解挑战（route=auto/direct）")
 
 // flight 是一次进行中的求解。done 在所有路径上都会被 close（含失败与 panic 边界），
 // 否则等待者会永久阻塞——这是单飞实现最常见的死锁来源。
@@ -309,9 +321,11 @@ func WithReplayClient(hc *http.Client) Option {
 // egress_id 时直接返回 ErrNoEgressProxy，而不是"悄悄直连试试"。
 func WithEgressProxy(egressID, proxyURL string) Option {
 	return func(c *Client) {
+		// 先记“配置过出口”：即使 URL 解析失败，回放也必须 fail closed。
+		c.egressConfigured = true
 		u, err := url.Parse(strings.TrimSpace(proxyURL))
 		if err != nil || u.Host == "" {
-			return // 解析不了就当没配；第一次回放会以 ErrNoEgressProxy 暴露出来
+			return // 解析失败不登记；replayClientFor 会因 egressConfigured 而拒绝直连
 		}
 		if c.proxies == nil {
 			c.proxies = map[string]*url.URL{}
@@ -410,6 +424,28 @@ func (c *Client) Get(ctx context.Context, target string) (*Clearance, error) {
 	return c.solveShared(ctx, target, false, SolveOptions{})
 }
 
+// cloneClearance 深拷贝凭证的可变字段（Cookies map / CookieList 切片）。
+//
+// 只做结构体浅拷贝时，调用方改一次 CookieList[0].Value 就会污染缓存里那份，
+// 同域后续请求会发出被改过的 cookie —— 而且没有任何报错（v6.4.3 实测 POISONED）。
+func cloneClearance(src *Clearance) *Clearance {
+	if src == nil {
+		return nil
+	}
+	out := *src
+	out.CookieList = append([]Cookie(nil), src.CookieList...)
+	if src.Cookies != nil {
+		cp := make(map[string]string, len(src.Cookies))
+		for k, v := range src.Cookies {
+			cp[k] = v
+		}
+		out.Cookies = cp
+	} else {
+		out.Cookies = nil
+	}
+	return &out
+}
+
 // cachedCopy 返回缓存副本（未命中/已进入续期窗口时返回 nil）。
 // 返回副本而不是指针：调用方会改 CFClearance 之类的字段（测试与业务都有），共享指针会互相污染。
 func (c *Client) cachedCopy(key string) *Clearance {
@@ -422,20 +458,10 @@ func (c *Client) cachedCopy(key string) *Clearance {
 	if !time.Now().Add(c.renewBefore).Before(cached.expiresAt()) {
 		return nil
 	}
-	hit := *cached
+	hit := cloneClearance(cached)
 	hit.Cached = true
 	hit.Elapsed = 0
-	// 深拷贝可变字段：只做结构体浅拷贝的话，CookieList 切片和 Cookies map 仍与缓存共享，
-	// 调用方一旦排序/裁剪就会污染缓存里那份（而且不会有任何报错）。
-	hit.CookieList = append([]Cookie(nil), cached.CookieList...)
-	if cached.Cookies != nil {
-		cp := make(map[string]string, len(cached.Cookies))
-		for k, v := range cached.Cookies {
-			cp[k] = v
-		}
-		hit.Cookies = cp
-	}
-	return &hit
+	return hit
 }
 
 // rememberLocked 写缓存并在超上限时淘汰（调用方必须已持 c.mu）。
@@ -458,7 +484,7 @@ func (c *Client) rememberLocked(key string, cl *Clearance) {
 			}
 		}
 	}
-	c.cache[key] = cl
+	c.cache[key] = cloneClearance(cl)
 }
 
 // GetFresh 强制重新求解（忽略本地缓存与服务端缓存）。
@@ -498,8 +524,7 @@ func (c *Client) solveShared(ctx context.Context, target string, force bool, opt
 			if f.err != nil {
 				return nil, f.err
 			}
-			hit := *f.cl
-			return &hit, nil
+			return cloneClearance(f.cl), nil
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		}
@@ -522,8 +547,7 @@ func (c *Client) solveShared(ctx context.Context, target string, force bool, opt
 	if f.err != nil {
 		return nil, f.err
 	}
-	hit := *f.cl
-	return &hit, nil
+	return cloneClearance(f.cl), nil
 }
 
 // invalidate 删掉某 key 的本地缓存（凭证失效时用）。
@@ -565,7 +589,7 @@ func (c *Client) solve(ctx context.Context, target string, force bool, opts Solv
 		req.Header.Set("Authorization", "Bearer "+c.token)
 	}
 
-	resp, err := c.probe.Do(req)
+	resp, err := c.hc.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("调用求解服务失败: %w", err)
 	}
@@ -593,6 +617,10 @@ func (c *Client) solve(ctx context.Context, target string, force bool, opts Solv
 	if !sr.Ok {
 		// HTTP 200 + ok:false = 求解失败（不是请求失败），语义见 docs/API.md
 		return nil, &APIError{StatusCode: resp.StatusCode, Code: sr.ErrorCode, Message: sr.Error, Stage: sr.Stage, Hint: sr.Hint}
+	}
+	// route=auto/direct：服务端探测后确认目标站没有挑战。这是"无需求解"，不是失败。
+	if !sr.Solved && sr.NoChallenge {
+		return nil, ErrNoChallenge
 	}
 	// 校验"这次 want 对应的那个产物"到齐了（服务端 RESULT_FIELD）：
 	// 只查 cf_clearance 的旧写法会让 want=turnstile 永远返回错误，而客户端明明已经拿到了 token。
@@ -737,7 +765,7 @@ func (c *Client) replayClientFor(egressID string) (*http.Client, error) {
 	if c.replayExplicit {
 		return c.replay, nil
 	}
-	if len(c.proxies) == 0 {
+	if len(c.proxies) == 0 && !c.egressConfigured {
 		return c.replay, nil
 	}
 	c.mu.Lock()

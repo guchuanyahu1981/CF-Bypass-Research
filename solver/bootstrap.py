@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import os
 import signal
+import sys
 import threading
 
 try:  # 作为包导入
@@ -103,6 +104,12 @@ def main(argv: list[str] | None = None) -> int:
                     help="任务超出预算后再等多久判定卡死（秒，默认 30）")
     ap.add_argument("--compat-max-pending", type=int, default=COMPAT_DEFAULT_MAX_PENDING,
                     help="YesCaptcha 兼容层（/createTask）待处理任务上限，满即 ERROR_NO_SLOT_AVAILABLE")
+    ap.add_argument("--rate-per-host", type=float, default=1.0 / 30.0,
+                    help="按域令牌桶速率（令牌/秒，默认 1/30 ≈ 同站 30s 一次；0=关闭）。"
+                         "**每个 worker 进程一份**（多进程部署实际频率 ≈ N×）；只对冷求解计数，"
+                         "缓存命中不消耗；超频返回 429 rate-limited + stage=admit")
+    ap.add_argument("--rate-burst", type=int, default=2,
+                    help="按域突发容量（默认 2，匹配预热/续期会连打两次的真实模式）")
     ap.add_argument("--egress-id", default=os.environ.get("CF_EGRESS_ID", "default"),
                     help="本进程的出口标识；换出口必须换 id，否则会复用别处 IP 的凭证")
     # 环境变量回退不是"顺手加的便利"：Dockerfile 与 docker-compose.yml 早就设了
@@ -158,7 +165,15 @@ def main(argv: list[str] | None = None) -> int:
     token = ""
     source = "disabled"
     if not args.no_auth:
-        token, source = load_or_create_token(args.token_file)
+        try:
+            token, source = load_or_create_token(args.token_file)
+        except OSError as e:
+            # 典型场景：多进程首启时锁残留/目录不可写。给结构化提示并 exit 2，
+            # 不要甩 traceback —— 文档承诺的是“缺依赖/环境问题 → 友好提示”。
+            print(f"[cfsolve] token 初始化失败：{e}", file=sys.stderr)
+            print(f"[cfsolve] 检查 {args.token_file} 的目录权限，或设置 {TOKEN_ENV} 环境变量。",
+                  file=sys.stderr)
+            return 2
 
     try:
         engine_enum = Engine.parse(args.engine)
@@ -169,17 +184,17 @@ def main(argv: list[str] | None = None) -> int:
         print(f"[cfsolve] 引擎不可用：{msg}" + (f" | 安装：{hint}" if hint else ""), flush=True)
         return 2
 
-    # 代理池 与 cfsolve/pydoll **不能同时启用**（这是启动即失败的硬冲突，不是警告）。
-    # 原因：cfsolve 与 pydoll 都在自己进程里直连（cfsolve 自带 BoringSSL、pydoll 自带 Chrome），
-    # 无法走代理池 ⇒ 它们拿到的 cf_clearance 绑定的是**本机直连 IP**；而 Go 侧回放会按
-    # 凭证的出口标识去走代理 ⇒ 求解与回放出口不一致 ⇒ 稳定的静默 403。
-    # 与其让它上线后表现为"随机 403"，不如启动就说清楚。
-    if args.proxy and (args.cfsolve_bin or args.pydoll):
+    # 代理池 与 cfsolve/pydoll/flaresolverr **不能同时启用**（这是启动即失败的硬冲突，不是警告）。
+    # 原因：这三个后端都不走代理池 —— cfsolve 自带 BoringSSL、pydoll 自带 Chrome、
+    # FlareSolverr 是远端 driver；它们拿到的 cf_clearance 绑定的是**各自出口的 IP**。
+    # 而治理层仍按代理池出口写缓存键、Go 侧回放又按凭证出口走代理 ⇒ 求解与回放出口不一致 ⇒
+    # 稳定的静默 403。与其让它上线后表现为"随机 403"，不如启动就说清楚。
+    if args.proxy and (args.cfsolve_bin or args.pydoll or args.flaresolverr):
         print(
-            "[cfsolve] 配置冲突：--proxy（代理池）与 --cfsolve-bin/--pydoll 不能同时启用。\n"
-            "  原因：cfsolve/pydoll 在各自进程里直连，走不了代理池；它们发出的凭证绑的是直连 IP，\n"
+            "[cfsolve] 配置冲突：--proxy（代理池）与 --cfsolve-bin/--pydoll/--flaresolverr 不能同时启用。\n"
+            "  原因：这三个后端在各自进程/远端直连，走不了代理池；它们发出的凭证绑的是各自出口 IP，\n"
             "        而 Go 侧回放会按凭证出口走代理 → 出口不一致 → 稳定 403。\n"
-            "  处理：二选一 —— 去掉 --proxy，或去掉 --cfsolve-bin/--pydoll。",
+            "  处理：二选一 —— 去掉 --proxy，或去掉 --cfsolve-bin/--pydoll/--flaresolverr。",
             flush=True,
         )
         return 2
@@ -212,6 +227,8 @@ def main(argv: list[str] | None = None) -> int:
         # 库/测试构造 Solver 时不传，保持默认 False —— 不能因为构造一个 Solver 就杀掉宿主。
         wedge_restart=bool(args.wedge_restart),
         wedge_grace=float(args.wedge_grace),
+        rate_per_host=float(args.rate_per_host),
+        rate_burst=int(args.rate_burst),
         browser_factory=None if engine_enum is Engine.CAMOUFOX else build_engine_factory(
             engine_enum, os_persona=args.browser_os
         ),
@@ -234,12 +251,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.cfsolve_bin and args.cfsolve_profile:
         backends.append(CfsolveBackend(
             args.cfsolve_bin, args.cfsolve_profile, timeout=args.cfsolve_timeout,
-            egress_id=args.egress_id,
+            egress_id=args.egress_id, default_ttl=args.ttl,
         ))
+    elif args.cfsolve_bin or args.cfsolve_profile:
+        print("[cfsolve] 警告：--cfsolve-bin 与 --cfsolve-profile 必须同时给出；"
+              "当前只有一个，纯协议后端不会启用（请求会走浏览器，慢一个数量级）。", flush=True)
     if args.pydoll:
         pyd = PydollBackend(
             args.chrome_path, headless=args.pydoll_headless, wait=args.pydoll_wait,
-            egress_id=args.egress_id,
+            egress_id=args.egress_id, default_ttl=args.ttl,
         )
         if not pyd.is_configured():
             print(f"[cfsolve] 警告：--pydoll 已开启但不可用（chrome={find_chrome(args.chrome_path) or '未找到'}；"
@@ -248,7 +268,8 @@ def main(argv: list[str] | None = None) -> int:
     backends.append(CamoufoxBackend(solver))
     if args.flaresolverr:
         backends.append(FlareSolverrBackend(
-            args.flaresolverr, session=(args.flaresolverr_session or "").strip()
+            args.flaresolverr, session=(args.flaresolverr_session or "").strip(),
+            default_ttl=args.ttl,
         ))
     # 把 solver 作为治理对象交给 router：缓存/准入/计数/按域统计对**所有后端**生效，
     # 而不是只对"恰好走了 Solver.solve 的那一棒"生效。

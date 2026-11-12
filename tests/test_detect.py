@@ -452,3 +452,91 @@ def test_detect_endpoint_closes_connection_on_chunked_body():
     finally:
         srv.shutdown()
         srv.server_close()
+
+
+def test_url_wildcard_signatures_match():
+    """带 * 的 URL 规则必须真的能命中（旧实现按字面子串，永远不中）。"""
+    d = detect.detect(status=403, headers={}, body="",
+                      url="https://collector-123.perimeterx.net/x", cookies={})
+    px = [x for x in d if x.id == "detect-perimeterx"]
+    assert px and any("url:collector-*.perimeterx.net" in h for h in px[0].hits), px
+    d2 = detect.detect(status=403, headers={}, body="",
+                       url="https://e.com/api/v1/collector", cookies={})
+    assert any(x.id == "detect-perimeterx" for x in d2), d2
+
+
+def test_f5_bigip_cookies_are_detected():
+    """F5 BIG-IP 的 TS*/BIGipServer* cookie 必须命中（自有整理，不依赖上游数据）。"""
+    d = detect.detect(status=200, headers={}, body="", url="",
+                      cookies={"TS01abc": "1", "BIGipServerpool": "1"})
+    f5 = [x for x in d if x.id == "detect-f5"]
+    assert f5 and f5[0].confidence == 100, d
+    rec = detect.recommend(d, "")
+    assert rec["route"] == "unsupported_or_browser", rec
+
+
+def test_f5_prefix_is_not_overbroad():
+    """`ts`/`ts_session` 不是 F5 专有；不能因为一个普通 ts 前缀就把站判成 F5 并拒绝。"""
+    for cookies in ({"ts": "1"}, {"ts_session": "1"}):
+        d = detect.detect(status=200, headers={}, body="", url="", cookies=cookies)
+        assert not any(x.id == "detect-f5" for x in d), (cookies, d)
+    d = detect.detect(status=200, headers={}, body="", url="", cookies={"TS01abc": "1"})
+    assert any(x.id == "detect-f5" for x in d), d
+
+
+def test_shape_dynamic_header_is_detected():
+    """Shape 的自有整理信号：8 位随机头族（不依赖上游规则文件）。"""
+    d = detect.detect(status=403, headers={"X-abc12345-a": "1"}, body="", url="", cookies={})
+    shape = [x for x in d if x.id == "detect-shapesecurity"]
+    assert shape and shape[0].confidence == 100, d
+    assert any("header_re:shape-dynamic-header" in h for h in shape[0].hits), shape[0].hits
+
+
+def test_generic_url_and_js_substrings_do_not_fake_shape_or_akamai():
+    """回归：`seed=` 与 `var _=[` 过于通用，不能让无盾站被判成有盾并拒绝求解。"""
+    d = detect.detect(status=200, headers={}, body="",
+                      url="https://plain.example/?seed=abc123", cookies={})
+    assert not any(x.id == "detect-shapesecurity" for x in d), d
+
+    d2 = detect.detect(status=200, headers={}, body="<script>var _=[1,2,3];</script>",
+                       url="https://plain.example/", cookies={})
+    assert not any(x.id == "detect-akamai" for x in d2), d2
+
+
+def test_url_rules_match_url_only_not_body():
+    """url 类信号只看 URL；body 里出现同串不能算 URL 命中。"""
+    d = detect.detect(status=200, headers={}, body="<a href='/akam/hidden'>x</a>",
+                      url="https://plain.example/", cookies={})
+    ak = next((x for x in d if x.id == "detect-akamai"), None)
+    assert ak is None or not any(h.startswith("url:") for h in ak.hits), d
+
+
+def test_shape_regex_does_not_match_ordinary_x_headers():
+    d = detect.detect(status=200, headers={"x-request-id": "1", "x-frame-options": "DENY"},
+                      body="", url="", cookies={})
+    assert not any(x.id == "detect-shapesecurity" for x in d), d
+
+
+def test_akamai_script_markers_are_detected():
+    d = detect.detect(status=200, headers={}, body="<script>bazadebezolkohpepadr=1</script>",
+                      url="", cookies={})
+    ak = [x for x in d if x.id == "detect-akamai"]
+    assert ak and any("content:bazadebezolkohpepadr" in h for h in ak[0].hits), ak
+
+
+def test_url_wildcard_rules_also_match_body():
+    """PerimeterX collector/enforcement 端点只出现在 body 的 script src 里；
+    kind=url 的通配规则必须同时查 URL 与 body，否则三条通配规则是死代码。"""
+    body = '<script src="https://collector-abc123.perimeterx.net/api/v1/collector"></script>'
+    d = detect.detect(status=200, headers={}, body=body, url="https://plain.example/", cookies={})
+    px = next((x for x in d if x.id == "detect-perimeterx"), None)
+    assert px is not None, d
+    assert any("collector" in h for h in px.hits), px.hits
+
+
+def test_url_literal_rules_still_url_only():
+    """/akam/ 字样出现在 body 里不能算命中（回归：不能回到 body 误判）。"""
+    d = detect.detect(status=200, headers={}, body='<a href="/akam/x">y</a>',
+                      url="https://plain.example/", cookies={})
+    ak = next((x for x in d if x.id == "detect-akamai"), None)
+    assert ak is None or not any(h.startswith("url:") for h in ak.hits), d

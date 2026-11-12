@@ -528,7 +528,7 @@ def test_http_route_auto_dispatches_multicaptcha(live_service, monkeypatch):
         "cloudflare_challenge_type": None,
         "recommendation": {"route": "multicaptcha", "want": "datadome", "reason": "-", "hint": "-"},
     }
-    monkeypatch.setattr(svc, "probe_protection", lambda url, timeout=15.0, guard=None: payload)
+    monkeypatch.setattr(svc, "probe_protection", lambda url, timeout=15.0, guard=None, **kw: payload)
 
     async def fake(*a, **k):
         return {"success": True}
@@ -913,3 +913,18 @@ def test_bypass_passes_through_unsolved_result(bypass, monkeypatch):
     out = mc.handle_compat_bypass({"url": "https://a.test/", "want": "datadome"},
                                   check_target=lambda h: None, entry_for=lambda h: None)
     assert out["solved"] is False and out["error"] == "widget not found"
+
+
+def test_bypass_clamps_timeout_s_field(bypass):
+    """扩展层的 timeout_s 也必须夹取：否则 1e9 会把该类求解与其锁占住近乎永久。"""
+    call, rec, _, _, _ = bypass
+    call({"url": "https://a.test/", "want": "datadome", "timeout_s": 1e9})
+    assert rec["timeout_s"] == 120.0
+
+
+def test_bypass_rejects_non_numeric_timeout_s(bypass):
+    call, rec, _, _, _ = bypass
+    with pytest.raises(SolveError) as ei:
+        call({"url": "https://a.test/", "want": "datadome", "timeout_s": "abc"})
+    assert ei.value.code is ErrorCode.INVALID_REQUEST
+    assert rec["solves"] == 0

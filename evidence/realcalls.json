@@ -1,0 +1,240 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-11-12T23:25:21",
+  "git_sha": "fd981ee",
+  "total": 46,
+  "passed": 46,
+  "failed": 0,
+  "checks": [
+    {
+      "name": "01 service ready",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "02 token 文件已生成",
+      "ok": true,
+      "detail": "长度=43"
+    },
+    {
+      "name": "03 GET / 公开可读",
+      "ok": true,
+      "detail": "status=200"
+    },
+    {
+      "name": "04 GET /health 免鉴权可读（200/503）",
+      "ok": true,
+      "detail": "status=200"
+    },
+    {
+      "name": "05 最小集 = 4 个状态字段 + request_id",
+      "ok": true,
+      "detail": "['browser_alive', 'ok', 'request_id', 'state', 'worker_alive']"
+    },
+    {
+      "name": "06 最小集不含内部字段",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "07 GET /status 无 token → 401",
+      "ok": true,
+      "detail": "status=401"
+    },
+    {
+      "name": "07 GET /logs 无 token → 401",
+      "ok": true,
+      "detail": "status=401"
+    },
+    {
+      "name": "07 GET /stats 无 token → 401",
+      "ok": true,
+      "detail": "status=401"
+    },
+    {
+      "name": "07 GET /metrics 无 token → 401",
+      "ok": true,
+      "detail": "status=401"
+    },
+    {
+      "name": "07 GET /console 无 token → 401",
+      "ok": true,
+      "detail": "status=401"
+    },
+    {
+      "name": "07 GET /audit 无 token → 401",
+      "ok": true,
+      "detail": "status=401"
+    },
+    {
+      "name": "07 POST /detect 无 token → 401",
+      "ok": true,
+      "detail": "status=401"
+    },
+    {
+      "name": "07 POST /solve 无 token → 401",
+      "ok": true,
+      "detail": "status=401"
+    },
+    {
+      "name": "08 GET /health 带 token 给完整视图",
+      "ok": true,
+      "detail": "status=200"
+    },
+    {
+      "name": "09 完整视图含 captcha_types 清单",
+      "ok": true,
+      "detail": "['akamai', 'aliyun', 'arkose', 'awswaf_x', 'botguard', 'cloudflare_x', 'datadome"
+    },
+    {
+      "name": "10 GET /status 含在途 + 卡死快照",
+      "ok": true,
+      "detail": "keys=['backends', 'cache_backend', 'code', 'compat', 'events_total', 'inflight', 'inflight_count', 'multicaptcha_inflight']"
+    },
+    {
+      "name": "11 /status 不把自身算进 inflight",
+      "ok": true,
+      "detail": "0"
+    },
+    {
+      "name": "12 GET /logs 返回环形缓冲",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "12b GET /audit 返回尾读结构",
+      "ok": true,
+      "detail": "status=200 keys=['lines', 'note', 'request_id', 'total_lines_estimate', 'truncated']"
+    },
+    {
+      "name": "12c /audit lines 超限不放大响应",
+      "ok": true,
+      "detail": "status=200 n=0 bytes=120"
+    },
+    {
+      "name": "12d /audit 非数字 lines 不炸（退回默认）",
+      "ok": true,
+      "detail": "status=200"
+    },
+    {
+      "name": "13 GET /stats 200",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "14 GET /metrics 是 Prometheus 文本",
+      "ok": true,
+      "detail": "status=200"
+    },
+    {
+      "name": "15 /metrics 含进程自检序列",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "16 GET /console 带 token 返回 HTML",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "17 POST /detect 内网目标 → 400（SSRF 守卫）",
+      "ok": true,
+      "detail": "status=400"
+    },
+    {
+      "name": "18 POST /solve 非法 scheme → 400",
+      "ok": true,
+      "detail": "status=400"
+    },
+    {
+      "name": "19 超大 body → 413（可重试语义）",
+      "ok": true,
+      "detail": "status=413"
+    },
+    {
+      "name": "20 createTask 错误 clientKey → 200+errorId=1",
+      "ok": true,
+      "detail": "status=200 ERROR_KEY_DOES_NOT_EXIST"
+    },
+    {
+      "name": "21 createTask 任务级代理 → ERROR_PROXY_NOT_SUPPORTED",
+      "ok": true,
+      "detail": "ERROR_PROXY_NOT_SUPPORTED"
+    },
+    {
+      "name": "22 createTask 不支持的类型 → ERROR_TASK_NOT_SUPPORTED（带原因）",
+      "ok": true,
+      "detail": "ERROR_TASK_NOT_SUPPORTED"
+    },
+    {
+      "name": "23 createTask 缺必填 → ERROR_TASK_PROPERTY_EMPTY",
+      "ok": true,
+      "detail": "ERROR_TASK_PROPERTY_EMPTY"
+    },
+    {
+      "name": "24 getTaskResult 未知 taskId → ERROR_NO_SUCH_CAPCHA_ID",
+      "ok": true,
+      "detail": "ERROR_NO_SUCH_CAPCHA_ID"
+    },
+    {
+      "name": "25 未知路径无 token → 401（不泄露端点存在性）",
+      "ok": true,
+      "detail": "status=401"
+    },
+    {
+      "name": "26 未知路径带 token → 404",
+      "ok": true,
+      "detail": "status=404"
+    },
+    {
+      "name": "27 审计日志已落盘且有 solve/deny 事件",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "28 审计日志不含 token 原文",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "32 HEAD /health 200 且无 body",
+      "ok": true,
+      "detail": "status=200 bytes=0"
+    },
+    {
+      "name": "33 OPTIONS /solve 204 + Allow",
+      "ok": true,
+      "detail": "status=204 allow=GET, HEAD, OPTIONS, POST"
+    },
+    {
+      "name": "34 PUT /solve 405 + Allow",
+      "ok": true,
+      "detail": "status=405 allow=GET, HEAD, OPTIONS, POST"
+    },
+    {
+      "name": "35 keep-alive HEAD→GET 同连接可用",
+      "ok": true,
+      "detail": "200/200 bytes=105"
+    },
+    {
+      "name": "36 chunked 请求体 → 400 invalid-request",
+      "ok": true,
+      "detail": "status=400 code=invalid-request"
+    },
+    {
+      "name": "29 POST /shutdown → 202",
+      "ok": true,
+      "detail": "status=202"
+    },
+    {
+      "name": "30 退出码 0",
+      "ok": true,
+      "detail": "exit=0"
+    },
+    {
+      "name": "31 日志无 Traceback",
+      "ok": true,
+      "detail": ""
+    }
+  ]
+}

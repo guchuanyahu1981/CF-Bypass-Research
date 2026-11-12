@@ -3,7 +3,7 @@
 五条硬约束（每条都有用例）：
   1. 零写入：无 form / POST
   2. 零新依赖：HTML 全部内联在 solver/console_html.py 的字符串常量里
-  3. token 保护：与其它端点同一套 Bearer；页面不含 token，前端 prompt() 现问存 sessionStorage
+  3. token 保护：与其它端点同一套 Bearer；页面不含 token，前端在右上角输入并只存 sessionStorage
   4. CSP + 无内联事件：CSP 头 default-src 'none'；无 innerHTML / onclick=
   5. 数据脱敏：只渲染白名单字段（不渲染 last_error 原文等）
 """
@@ -215,3 +215,29 @@ def test_console_favicon_is_inline_svg():
     assert href.startswith("data:image/svg+xml;base64,"), href
     # 内联 data URI 里的 xmlns 是命名空间声明，不会发起请求；这里断言的是没有外链资源。
     assert not re.search(r"(src|href)\s*=\s*[\"']https?://", console_html.CONSOLE_PAGE_HTML)
+
+
+# ── v6.4.1 P1：内联 token、清除 token 停定时器、无效 token 文案 ──
+
+
+def test_console_has_inline_token_input_and_no_prompt():
+    page = console_html.CONSOLE_PAGE_HTML
+    assert 'id="token"' in page and 'id="save"' in page
+    assert "window.prompt" not in page
+    assert 'aria-label="Bearer token' in page
+    assert "tokenInput.value = token()" not in page
+    assert "已保存 token（重新输入可替换）" in page
+
+
+def test_console_forget_stops_audit_timer_and_clears_table():
+    page = console_html.CONSOLE_PAGE_HTML
+    assert "clearInterval(auditTimer)" in page
+    assert 'setEmpty(auditEl, "未加载")' in page
+    assert "停止审计自动刷新" in page
+
+
+def test_console_surfaces_invalid_token_and_uses_ink_code():
+    page = console_html.CONSOLE_PAGE_HTML
+    assert "token 被服务端拒绝（401）" in page
+    assert "token 无效（401）：无法读取审计日志" in page
+    assert "code { color:var(--ink);" in page

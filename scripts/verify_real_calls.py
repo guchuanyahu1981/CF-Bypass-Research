@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import argparse
+import http.client
 import json
 import os
 import socket
@@ -92,6 +93,7 @@ def read_token(path: Path, timeout: float = 20.0) -> str:
 def main() -> int:
     ap = argparse.ArgumentParser(description="真实调用验收（真进程 + 真 token）")
     ap.add_argument("--keep", action="store_true", help="失败时保留进程与日志")
+    ap.add_argument("--json-out", default="", help="把验收结果写成 JSON（证据用）")
     args = ap.parse_args()
 
     port = free_port()
@@ -111,11 +113,12 @@ def main() -> int:
     try:
         # ── 1. 起得来 + token 落地 ────────────────────
         ready = False
-        end = time.monotonic() + 90
+        end = time.monotonic() + 120
         while time.monotonic() < end:
             try:
-                st, _, _ = call(base, "GET", "/health")
-                if st in (200, 503):
+                st, body, _ = call(base, "GET", "/health")
+                j = as_json(body)
+                if st == 200 and j.get("state") == "ready":
                     ready = True
                     break
             except Exception:  # noqa: BLE001
@@ -126,7 +129,7 @@ def main() -> int:
         check("02 token 文件已生成", bool(token), f"长度={len(token)}")
         if not ready or not token:
             failed = True
-            return _finish(proc, log, log_path, workdir, args.keep, failed)
+            return _finish(proc, log, log_path, workdir, args.keep, failed, args.json_out)
 
         # ── 2. 公开端点 ──────────────────────────────
         st, body, _ = call(base, "GET", "/")
@@ -261,6 +264,48 @@ def main() -> int:
         except OSError:
             check("27 审计日志已落盘且有 solve/deny 事件", False, "文件不存在")
 
+        # ── 8. HTTP 方法语义（真进程；单测之外再验一次）──
+        st, body, headers = call(base, "HEAD", "/health")
+        check("32 HEAD /health 200 且无 body", st == 200 and body == b"", f"status={st} bytes={len(body)}")
+        st, body, headers = call(base, "OPTIONS", "/solve")
+        allow = headers.get("Allow", "")
+        check("33 OPTIONS /solve 204 + Allow",
+              st == 204 and body == b"" and "POST" in allow, f"status={st} allow={allow}")
+        st, body, headers = call(base, "PUT", "/solve", token=token, body={})
+        allow = headers.get("Allow", "")
+        check("34 PUT /solve 405 + Allow",
+              st == 405 and "POST" in allow and as_json(body).get("error_code") == "method-not-allowed",
+              f"status={st} allow={allow}")
+
+        # ── 8b. keep-alive 与 chunked（单测覆盖过，这里验真进程）──
+        host, port_s = base.rsplit(":", 1)
+        conn = http.client.HTTPConnection(host.replace("http://", ""), int(port_s), timeout=10)
+        try:
+            conn.request("HEAD", "/health")
+            r1 = conn.getresponse(); r1.read()
+            conn.request("GET", "/health")
+            r2 = conn.getresponse(); body2 = r2.read()
+            check("35 keep-alive HEAD→GET 同连接可用",
+                  r1.status == 200 and r2.status == 200 and b'"state"' in body2,
+                  f"{r1.status}/{r2.status} bytes={len(body2)}")
+        finally:
+            conn.close()
+
+        conn = http.client.HTTPConnection(host.replace("http://", ""), int(port_s), timeout=10)
+        try:
+            conn.request("POST", "/solve", body=b'{"url":"https://e.com/"}',
+                         headers={"Content-Type": "application/json",
+                                  "Authorization": f"Bearer {token}",
+                                  "Transfer-Encoding": "chunked"},
+                         encode_chunked=True)
+            r = conn.getresponse(); raw = r.read()
+            j = as_json(raw)
+            check("36 chunked 请求体 → 400 invalid-request",
+                  r.status == 400 and j.get("error_code") == "invalid-request",
+                  f"status={r.status} code={j.get('error_code')}")
+        finally:
+            conn.close()
+
         # ── 9. 优雅退出 ─────────────────────────────
         st, body, _ = call(base, "POST", "/shutdown", token=token)
         check("29 POST /shutdown → 202", st == 202, f"status={st}")
@@ -280,12 +325,35 @@ def main() -> int:
             except Exception:  # noqa: BLE001
                 proc.kill()
         log.close()
-    return _finish(proc, log, log_path, workdir, args.keep, failed)
+    return _finish(proc, log, log_path, workdir, args.keep, failed, args.json_out)
 
 
-def _finish(proc, log, log_path: Path, workdir: Path, keep: bool, failed: bool) -> int:
+def _finish(proc, log, log_path: Path, workdir: Path, keep: bool, failed: bool,
+            json_out: str = "") -> int:
     bad = [r for r in results if not r[1]]
     print(f"\nRESULT: {len(results) - len(bad)}/{len(results)} 通过")
+    if json_out:
+        try:
+            sha = subprocess.check_output(
+                ["git", "rev-parse", "--short", "HEAD"], cwd=ROOT, text=True,
+                encoding="utf-8", errors="replace").strip()
+        except (OSError, subprocess.CalledProcessError):
+            sha = ""
+        payload = {
+            "schema_version": 1,
+            "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "git_sha": sha,
+            "total": len(results),
+            "passed": len(results) - len(bad),
+            "failed": len(bad),
+            "checks": [{"name": name, "ok": ok, "detail": detail}
+                       for name, ok, detail in results],
+        }
+        out = Path(json_out)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+                       encoding="utf-8")
+        print(f"JSON: {out}")
     if bad or keep:
         print(f"日志：{log_path}")
         for name, _, detail in bad[:10]:

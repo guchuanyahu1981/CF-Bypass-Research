@@ -1,6 +1,7 @@
-# captchas/ —— 万盾求解器副本（自有，不追上游）
+# captchas/ —— 万盾求解器副本（本项目维护，不追上游）
 
-11 厂商验证码/挑战求解器，源自 `captcha-solver`，**已合并进本仓库作为自有代码**。
+11 厂商验证码/挑战求解器，源自 `captcha-solver`（上游目录无 LICENSE 文件；项目所有者 2026-11-11
+确认按 MIT 开源，来源与许可状态见根 `NOTICE`）。**本目录是项目维护的副本，不是上游依赖。**
 
 ## 为什么是副本而不是依赖
 
@@ -41,6 +42,13 @@
 没有许可证时 `launch_async` 抛 `CloakBrowserLicenseError`；`aliyun`/`arkose` 另需
 `onnxruntime` + `opencv-python-headless`。缺失或未登录时请求报 `not-configured`(503)
 + 安装/登录提示，不影响主链路。
+
+**不走人家 license 的本地路径（v6.4.3 实测）**：设置
+`CLOAKBROWSER_BINARY_PATH=<本机 Chromium/Chrome 路径>` 即可跳过 license 校验
+（`cloakbrowser/download.py::ensure_binary` 先检查该变量，命中即直接返回，不读 license）。
+本机用 Playwright Chromium 在官方 Turnstile 测试 sitekey 上机械跑通（7.3s，token 正常返回）。
+但本地 Chromium **没有 CloakBrowser 的 stealth 补丁**：这只证明机械链路
+（启动/路由/solve/取 token），不证明真实挑战的反检测成功率；stealth 仍需自建引擎或专有二进制。
 
 ## 上游同步策略
 

@@ -269,7 +269,14 @@ def main() -> int:
     base = f"http://127.0.0.1:{port}"
     try:
         if not wait_ready(base):
-            log = proc.stdout.read() if proc.stdout else ""
+            # 进程可能还活着（starting/wedged）；直接 read() 会阻塞到 EOF。
+            try:
+                proc.terminate()
+                out, err = proc.communicate(timeout=5)
+            except Exception:  # noqa: BLE001
+                proc.kill()
+                out, err = proc.communicate(timeout=5)
+            log = (out or "") + (err or "")
             print("服务未能就绪：" + chr(10) + log[-2000:], file=sys.stderr)
             return 1
         token = _read_token(token_file)

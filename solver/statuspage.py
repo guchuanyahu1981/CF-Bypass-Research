@@ -51,9 +51,9 @@ __UI_TOKENS__
      这是刻意的：degraded 会自愈（黄=等等看），wedged 只能重启（红底白字=必须动手）。 */
   .badge.wedged { background:var(--bad-solid); border-color:var(--bad-solid); color:#fff; }
   input[type=password], input[type=text] {
-    padding:6px 9px; border-radius:6px; border:1px solid var(--line);
-    background:var(--panel); color:var(--ink); font-size:13px; min-width:220px; }
-  button { padding:6px 12px; border-radius:6px; border:1px solid var(--line);
+    padding:8px 10px; border-radius:6px; border:1px solid var(--line);
+    background:var(--panel); color:var(--ink); font-size:13px; width:220px; min-width:0; }
+  button { padding:8px 14px; min-height:36px; border-radius:6px; border:1px solid var(--line);
            background:var(--panel); color:var(--ink); font-size:13px; cursor:pointer; }
   button:hover { border-color:var(--accent); color:var(--accent); }
   button[aria-pressed=true] { border-color:var(--accent); color:var(--accent); }
@@ -85,7 +85,7 @@ __UI_TOKENS__
   .stamp { display:inline-block; margin-left:8px; font-size:11px; font-weight:600;
            color:var(--bad); border:1px solid var(--bad); border-radius:999px; padding:1px 7px; }
   .foot { margin-top:16px; color:var(--muted); font-size:12px; }
-  code { background:rgba(127,127,127,.15); padding:1px 5px; border-radius:4px; font-size:12px; }
+  code { color:var(--ink); background:rgba(127,127,127,.15); padding:1px 5px; border-radius:4px; font-size:12px; }
 </style>
 </head>
 <body>
@@ -93,8 +93,13 @@ __UI_TOKENS__
   <h1>CF 求解服务 · 状态</h1>
   <span id="state" class="badge starting">未知</span>
   <span class="spacer"></span>
-  <input id="token" type="password" placeholder="Bearer token（来自 .env）" autocomplete="off">
-  <button id="save" type="button">保存</button>
+  <span class="token-group">
+    <label class="token-field"><span class="token-label">token</span>
+      <input id="token" type="password" placeholder="Bearer token（来自 .env）"
+             autocomplete="off" aria-label="Bearer token（来自 .env）"
+             title="服务端 .env 里的 CF_SOLVE_TOKEN 值"></label>
+    <button id="save" type="button">保存</button>
+  </span>
   <button id="refresh" type="button">刷新</button>
   <button id="auto" type="button" aria-pressed="false">自动刷新</button>
 </header>
@@ -219,6 +224,9 @@ __UI_TOKENS__
       var span = document.createElement("span");
       // 带 _x 后缀的是"避让主链路命名"的变体，用不同配色区分，避免误以为是另一套能力
       span.className = "chip" + (t.slice(-2) === "_x" ? " x" : "");
+      if (t.slice(-2) === "_x") {
+        span.title = "嫁接层变体（_x）：与主链路区分命名，依赖外部求解引擎";
+      }
       span.textContent = t;
       chipsEl.appendChild(span);
     });
@@ -370,25 +378,50 @@ __UI_TOKENS__
         return getJSON("/logs?lines=20").then(function (lg) { return [h, st, lg]; });
       }); })
       .then(function (rs) {
-        lastOkAt = Date.now();
+        var hres = rs[0];
+        var hb = hres.body || {};
+        var st = hb.state || "";
+        var healthOk = hres.status === 200;
+        // 只有 200 才算"数据是新的"：503/degraded 时保留上次成功时间，
+        // markStale 才能算出真实的数据年龄（否则会显示"过期 0 秒"）。
+        if (healthOk) {
+          lastOkAt = Date.now();
+        }
+        // 只有"请求本身失败"才标记过期；5xx 是当前响应，卡片不是旧快照。
         markStale(false);
-        renderHealth(rs[0]);
-        renderCaptchaTypes(rs[0].body || {});
-        renderProxies(rs[0].body || {});
+        renderHealth(hres);
+        renderCaptchaTypes(hb);
+        renderProxies(hb);
         renderStatus(rs[1]);
         renderLogs(rs[2]);
-        // /health 是公开的（所以"服务活着"这件事不需要 token 就能看到）；
-        // 但 /status 与 /logs 需要 token —— 401 时必须**明确说清楚缺什么、去哪拿**，
-        // 否则用户看到的是"健康 ready，但两块面板写着读不到"，只能自己去猜。
+        var hasToken = !!token();
         var needsToken = rs[1].status === 401 || rs[2].status === 401;
-        if (needsToken) {
+        if (!healthOk && st) {
+          var tokenHint = needsToken
+            ? " 另外，/status 与 /logs 需要 Bearer token；需要时在右上角输入并保存。"
+            : "";
+          if (st === "wedged") {
+            setBanner("worker 卡死（wedged）：服务不会自愈。" + (hb.wedged_reason || "") +
+                      (hb.wedge_restart ? "进程将以退出码 75 退出并由 supervisor 拉起。"
+                                        : "wedge_restart 未开启，需手动重启。") + tokenHint, true);
+          } else {
+            setBanner("/health 返回 " + hres.status + "（state=" + st + "），服务正在自愈或启动中；" +
+                      "卡片来自本次响应，可能不完整。" + tokenHint, false);
+          }
+        } else if (needsToken && hasToken) {
+          // /health 是公开的，所以"服务活着"永远成立；401 只能来自 /status 或 /logs。
+          // 带了 token 还 401 = token 被拒，不能再笼统说"需要 token"。
+          setState("token 无效", "unauthorized");
+          setBanner("token 被服务端拒绝（401）。请确认输入的是服务端 .env 里的 CF_SOLVE_TOKEN 值；" +
+                    "重新保存后页面会自动刷新。", true);
+        } else if (needsToken) {
           setBanner("服务活着（健康信息是公开的）。要看「在途请求」与「最近事件」需要 Bearer token：" +
                     "从服务端的 .env 里取 CF_SOLVE_TOKEN= 后面的值，粘到右上角后点「保存」。", false);
         } else {
           setBanner("");
         }
         var total = (rs[2].body || {}).total;
-        if (total != null && !needsToken) {
+        if (total != null && healthOk && !needsToken) {
           if (lastTotal != null && total !== lastTotal) {
             setBanner("事件总数 " + lastTotal + " → " + total, false, 3000);
           }
@@ -407,7 +440,16 @@ __UI_TOKENS__
   }
 
   saveBtn.addEventListener("click", function () {
-    sessionStorage.setItem(TOKEN_KEY, tokenInput.value.trim());
+    var value = tokenInput.value.trim();
+    if (value) {
+      sessionStorage.setItem(TOKEN_KEY, value);
+      tokenInput.value = "";
+      tokenInput.placeholder = "已保存 token（重新输入可替换）";
+    } else {
+      sessionStorage.removeItem(TOKEN_KEY);
+      tokenInput.placeholder = "Bearer token（来自 .env）";
+      setBanner("已清除 sessionStorage 中的 token。", false);
+    }
     refresh();
   });
   refreshBtn.addEventListener("click", refresh);
@@ -425,7 +467,9 @@ __UI_TOKENS__
     }
   });
 
-  tokenInput.value = token();
+  // 不在 DOM 里回填 token（sessionStorage 的内容也不该出现在 input.value）。
+  // 已保存时只改 placeholder 提示用户“可以重输替换”。
+  if (token()) { tokenInput.placeholder = "已保存 token（重新输入可替换）"; }
   refresh();
 })();
 </script>

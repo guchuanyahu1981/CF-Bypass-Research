@@ -197,7 +197,7 @@ def test_http_auto_skips_browser_for_unprotected_site(live_service, monkeypatch)
     """无盾站：**一次浏览器求解都不该发生**，且响应要说清"没盾，直接请求"。"""
     base, solver = live_service
     monkeypatch.setattr(svc, "probe_protection",
-                        lambda url, timeout=15.0, guard=None: detect_payload(protected=False, status=200))
+                        lambda url, timeout=15.0, guard=None, **kw: detect_payload(protected=False, status=200))
 
     status, body = _post(base, {"url": HOST, "route": "auto"})
     assert status == 200
@@ -212,7 +212,7 @@ def test_http_auto_skips_browser_for_unprotected_site(live_service, monkeypatch)
 def test_http_auto_rejects_unsupported_provider_without_waiting(live_service, monkeypatch):
     base, solver = live_service
     monkeypatch.setattr(svc, "probe_protection",
-                        lambda url, timeout=15.0, guard=None: detect_payload([KASADA]))
+                        lambda url, timeout=15.0, guard=None, **kw: detect_payload([KASADA]))
     status, body = _post(base, {"url": HOST, "route": "auto"})
     assert status == 200 and body["ok"] is False
     assert body["error_code"] == "unsolved" and body["stage"] == "detect"
@@ -224,7 +224,7 @@ def test_http_auto_rejects_unsupported_provider_without_waiting(live_service, mo
 def test_http_auto_solves_when_cloudflare_present(live_service, monkeypatch):
     base, solver = live_service
     monkeypatch.setattr(svc, "probe_protection",
-                        lambda url, timeout=15.0, guard=None: detect_payload([CF], "managed"))
+                        lambda url, timeout=15.0, guard=None, **kw: detect_payload([CF], "managed"))
     status, body = _post(base, {"url": HOST, "route": "auto", "timeout": 10})
     # 替身浏览器不给 clearance ⇒ solved=false，但**求解确实发生了**，并且 routed_by 被回填
     assert status == 200

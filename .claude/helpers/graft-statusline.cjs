@@ -3,7 +3,6 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { pathToFileURL } = require('url');
-const { execFileSync } = require('child_process');
 const dir = process.env.CLAUDE_PROJECT_DIR || process.cwd();
 
 // The same code ships as @trailhq/trail-code and as @nanonets/graft, its old name;
@@ -65,8 +64,11 @@ function onPath() {
 }
 
 // The global node_modules dir per npm (handles Homebrew/Windows/volta). Queried on demand.
+// child_process is required here, not up top: loading it costs a few ms that
+// PreToolUse, which runs before every shell command, never needs to pay.
 function globalRoot() {
   try {
+    const { execFileSync } = require('child_process');
     const root = execFileSync('npm', ['root', '-g'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], shell: process.platform === 'win32', windowsHide: true }).trim();
     return root || null;
   } catch { return null; /* npm unavailable */ }
@@ -103,12 +105,12 @@ function best(dirs, name) {
   return bestDir;
 }
 
-function entry(name) {
+function entry(name, cheapOnly) {
   // Cheap candidates first, and only shell out to npm when every one of them misses.
   const cheap = [remembered(), ...fromPkg(dir), ...fromPkg(path.join(path.dirname(process.execPath), '..', 'lib')), ...onPath()];
   const hit = best(cheap, name);
   if (hit) return path.join(hit, name);
-  const gr = globalRoot();
+  const gr = cheapOnly ? null : globalRoot();
   const global = gr && best(PKGS.map((p) => path.join(gr, ...p.split('/'), 'dist', 'claude')), name);
   if (global) return path.join(global, name);
   return path.join(dir, 'dist', 'claude', name); // last-ditch; import will no-op if absent

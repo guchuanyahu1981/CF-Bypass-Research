@@ -82,3 +82,11 @@ site/playwright-report/
 
 # TypeScript incremental build cache
 site/tsconfig.tsbuildinfo
+
+# 本机调试残留（含 token 指纹/审计行，不入库）
+local_solver.log
+local_tok.txt
+
+# 复审工具的中间产物（prompt/raw 是过程文件，报告本身才入库）
+evidence/*.prompt
+evidence/*.raw

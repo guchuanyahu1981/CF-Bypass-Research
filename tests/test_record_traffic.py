@@ -507,3 +507,66 @@ def test_user_agent_override_only_when_asked(monkeypatch, tmp_path):
     rt.record("https://t.test/", tmp_path, engine="chromium", ua="Mozilla/5.0 X",
               timeout=1.0, max_requests=1, wait_after=0)
     assert seen.get("user_agent") == "Mozilla/5.0 X"
+
+
+# ── 每请求时序与跳转链（P3-05）────────────────────────
+
+
+class _ChainReq:
+    def __init__(self, url: str, prev=None) -> None:
+        self.url = url
+        self.redirected_from = prev
+
+
+def test_redirect_info_counts_hops_and_redacts_credentials():
+    a = _ChainReq("http://user:secret@a.test/1")
+    b = _ChainReq("https://a.test/2", a)
+    c = _ChainReq("https://a.test/3", b)
+    url, count = rt.redirect_info(c)
+    assert count == 2, "两跳链必须数出 2"
+    assert url == "https://a.test/2", url
+    assert "secret" not in str(rt.redirect_info(b)), "跳转链里也不许出现口令"
+
+
+def test_redirect_info_stops_on_cycle():
+    a = _ChainReq("https://a.test/1")
+    b = _ChainReq("https://a.test/2", a)
+    a.redirected_from = b
+    url, count = rt.redirect_info(b)
+    assert count == 2 and url == "https://a.test/1", (url, count)
+
+
+def test_record_writes_wait_ms_and_redirect_fields(monkeypatch, tmp_path):
+    """真机字段契约：每条记录都有 `wait_ms`，跳转目标带上上一跳 URL 与跳数。"""
+    import json
+
+    page = _FakePage(lambda p: [])
+    _patched(monkeypatch, page)
+    first = _FakeReq("http://user:secret@t.test/old")
+    second = _FakeReq("https://t.test/new", "document")
+    second.redirected_from = first
+    page._reqs[first.url] = first
+    page._reqs[second.url] = second
+    page._script = lambda p: [
+        lambda: p._handlers["request"](first),
+        lambda: p._handlers["response"](_FakeResp(p, first, 301)),
+        lambda: p._handlers["request"](second),
+        lambda: p._handlers["response"](_FakeResp(p, second, 200)),
+    ]
+    rt.record("https://t.test/", tmp_path, engine="chromium",
+              ua="UA", timeout=1.0, max_requests=5, wait_after=0)
+    recs = [json.loads(line) for line in
+            (tmp_path / "traffic.jsonl").read_text(encoding="utf-8").splitlines()]
+
+    assert len(recs) == 2
+    assert all(isinstance(r["wait_ms"], float) and r["wait_ms"] >= 0 for r in recs)
+    hop = next(r for r in recs if r["url"] == "https://t.test/new")
+    assert hop["redirected_from"] == "http://user:***@t.test/old", hop
+    assert hop["redirect_count"] == 1
+    assert recs[0]["redirect_count"] == 0 and recs[0]["redirected_from"] is None
+    assert "secret" not in (tmp_path / "traffic.jsonl").read_text(encoding="utf-8")
+
+
+def test_summarize_counts_redirected_requests():
+    recs = [_rec(redirect_count=0), _rec(redirect_count=1), _rec(redirect_count=2)]
+    assert rt.summarize(recs)["redirects"] == 2

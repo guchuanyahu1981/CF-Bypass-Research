@@ -9,9 +9,9 @@
 设计约束：
   · 纯 stdlib、零依赖（本仓库的既有风格）。
   · 错误码是**对外契约**：改名等于破坏兼容，新增只能追加。
-  · **不要在契约里写"永不产生"的码**：`RATE_LIMITED` 曾注释成"同一 host 求解过频"，
-    但按 host 限流这个功能根本没实现 —— 调用方会照着文档去写 429 重试逻辑，那是死代码。
-    现标记为预留值；真要做按 host 限流时再实现，并同步更新 `docs/API.md`。
+  · **不要在契约里写"永不产生"的码**：`RATE_LIMITED` 曾注释成预留值，
+    但 v6.4.3 已实现按域令牌桶（`solver/ratelimit.py`，CLI 默认 `1/30`）；
+    它现在是真实会产生的 429，文档与枚举必须同步。
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ class ErrorCode(str, Enum):
     INVALID_REQUEST = "invalid-request"     # 参数非法：URL 不合规、timeout 越界、body 畸形
     PAYLOAD_TOO_LARGE = "payload-too-large"  # 请求体超限：可减小后重试（区别于 400 的"不该重试"）
     UNAUTHORIZED = "unauthorized"           # 缺少或错误的 Bearer token
-    RATE_LIMITED = "rate-limited"           # **预留值**：当前没有按 host 限流，不会产生（见下）
+    RATE_LIMITED = "rate-limited"           # 同一 host 冷求解过频（按域令牌桶，默认 1/30）
     BUSY = "busy"                           # 准入拒绝：队列已满 / inflight 已达上限
     NOT_FOUND = "not-found"                 # 路径不存在（v6.4 C3：此前是裸字面量，不在枚举里）
     METHOD_NOT_ALLOWED = "method-not-allowed"  # 该路径不支持的 HTTP 方法（v6.4 C3）

@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "overall": "passed",
+  "tracks": {
+    "ui": {
+      "total": 70,
+      "failed": 0,
+      "passed": 70,
+      "missing": "",
+      "axe_violations": 0,
+      "screenshots": 17,
+      "path": "evidence/ui-acceptance.json"
+    },
+    "realcalls": {
+      "total": 46,
+      "failed": 0,
+      "passed": 46,
+      "missing": "",
+      "path": "evidence/realcalls.json"
+    },
+    "e2e": {
+      "total": 40,
+      "failed": 0,
+      "passed": 40,
+      "missing": "",
+      "path": "evidence/e2e-local.json"
+    },
+    "code_review": {
+      "status": "ok",
+      "verdict": "PASS",
+      "path": "evidence/code-review.md",
+      "bytes": 849,
+      "p0_mentions": 0,
+      "p1_mentions": 0,
+      "p2_mentions": 0
+    }
+  },
+  "ok": {
+    "ui": true,
+    "realcalls": true,
+    "e2e": true,
+    "code_review": true
+  }
+}

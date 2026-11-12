@@ -40,7 +40,8 @@ npm run verify:csp     # reject unsafe-inline/eval, missing hashes, external res
 npm run verify:out     # canonical/hreflang/sitemap/robots/JSON-LD/OG/placeholder scan
 npm run verify:site    # Playwright routes, hreflang, JSON-LD, axe, reduced-motion, no-WebGL
 npm run test:e2e       # Playwright runtime errors, keyboard focus, reduced-motion, CLS
-npm run lighthouse     # desktop preset
+npm run lighthouse     # desktop preset（error 级硬门禁）
+npm run lighthouse:mobile  # mobile preset（性能/TBT warn，a11y/BP/SEO error）
 ```
 
 `npm run build` runs three gates in order: `scripts/check-env.mjs` (public origin),
@@ -107,13 +108,13 @@ headers.
 | `npm run build` (`NEXT_PUBLIC_SITE_URL=https://cf-solver.dev`) | 20 static routes, `out/404.html`, no `localhost`/placeholder leakage |
 | `npm run verify:csp` | 17 HTML files, 20 inline-script hashes |
 | `npm run verify:out` | 12 indexable pages, 2 noindex pages, 404 noindex, OG 1200×630 |
-| `npm run test:content` | 11/11 (legal copy, benchmark-id references, hardcoded-number scan, version sync) |
+| `npm run test:content` | 12/12 (legal copy, benchmark-id references, hardcoded-number scan, `import httpx`, version sync) |
 | `npm run test:tokens` | 34 files, 0 hardcoded colors |
 | `npm run test:contrast` | dark/light text ≥ 4.5, focus ≥ 3 |
 | `npm run verify:site` | 14 routes, axe 0, reduced-motion static, no-WebGL static |
-| `npm run test:e2e` | 19/19 (runtime errors, keyboard focus ring, reduced-motion, scene controls, static controls, 360px controls, pointer-triggered + idle 3D, CLS) |
-| Lighthouse desktop (2026-11-08 re-run) | Perf 100 / A11y 100 / BP 100 / SEO 100; LCP 0.4s/0.3s, CLS 0, TBT 0ms |
-| Lighthouse mobile (2026-11-06) | Perf 98 / A11y 100 / BP 100 / SEO 100; LCP 1.2s/1.1s, TBT 150/140ms |
+| `npm run test:e2e` | 22/22 (runtime errors, keyboard focus ring, reduced-motion, scene controls, static controls, 360px controls, pointer-triggered + idle 3D, CLS, theme persistence, language routes, 360px mobile menu) |
+| Lighthouse desktop (2026-11-12 re-run) | Perf 100 / A11y 100 / BP 100 / SEO 100; LCP 0.32s/0.33s, CLS 0, TBT 0ms |
+| Lighthouse mobile (2026-11-12 re-run) | Perf 98–99 / A11y 100 / BP 100 / SEO 100; LCP 1.09–1.20s, CLS 0, TBT 113–139ms |
 | Initial JS gzip | 227.7 KB (budget 250 KB) |
 | 3D chunk gzip | 236.2 KB (budget 260 KB) |
 | CSS gzip | 6.7 KB |
@@ -124,9 +125,12 @@ The measured framework baseline (Next 16 + React 19 + motion) and three.js make 
 caps unattainable without dropping the chosen stack; the budgets were revised to
 250/260 KB with no regression allowed.
 
-The Lighthouse desktop figures were re-measured on 2026-11-08 after the metadata
-and OG changes. The mobile run is still the 2026-11-06 measurement; the 2026-11-08
-changes add no bundle and no third-party request.
+The Lighthouse numbers above were re-measured on 2026-11-12. Desktop assertions are
+`error` (Performance/A11y/BP/SEO ≥ 0.9/0.95/0.9/1.0, LCP ≤ 2s, CLS ≤ 0.05,
+TBT ≤ 200ms), so the desktop Lighthouse assertions (thresholds 0.9/0.95/0.9/1.0; measured 100) are now a hard gate rather than a release note.
+Mobile keeps Performance/TBT at `warn` because runner load moves those two; its
+A11y/BP/SEO assertions are still `error`. Mobile baseline thresholds: Performance 0.8,
+CLS 0.1, TBT 300ms.
 
 ## Known gaps
 

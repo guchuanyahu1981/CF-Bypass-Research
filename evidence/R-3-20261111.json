@@ -1,0 +1,44 @@
+{
+  "task_id": "R-3",
+  "timestamp": "2026-11-11T16:50:00+08:00",
+  "status": "blocked_failure_cap",
+  "summary": "两次尝试都没有拿到 response.decoded.txt，6 条 stage2 结构断言仍 skip；累计失败达到 5/5，按 policy.md §2 立即全停，不再重试。",
+  "attempts": [
+    {
+      "id": "R-3a",
+      "target": "https://www.scrapingcourse.com/cloudflare-challenge",
+      "cmd": "challenge --page <target> <outdir> --solve --proxy http://127.0.0.1:10808 --fingerprint profiles/safari-26-ios.json",
+      "exit_code": 124,
+      "elapsed_sec": 260,
+      "stderr_tail": [
+        "answered HTTP 403 Forbidden with a challenge page; running its orchestrator",
+        "Fetched the 623818-byte orchestrator; deobfuscating it with the page's options"
+      ],
+      "artifacts": {"page.html": 5910, "orchestrator.js": 623818, "orchestrator.deobfuscated.js": 536742},
+      "missing": "response.decoded.txt",
+      "diagnosis": "与 2026-11-10 同一卡点：deobfuscate 之后进入 first_payload → PreparedSession::try_new/state() 的 VM 执行阶段挂住；260s 超时。"
+    },
+    {
+      "id": "R-3b",
+      "target": "https://www.udemy.com/",
+      "cmd": "challenge --page <target> <outdir> --solve --proxy http://127.0.0.1:10808 --fingerprint profiles/safari-26-ios.json",
+      "exit_code": 1,
+      "elapsed_sec": "short",
+      "stderr_tail": ["Error: page has no .cf-turnstile container"],
+      "artifacts": {"page.html": 307026},
+      "missing": "response.decoded.txt",
+      "diagnosis": "udemy 该次返回的是无 .cf-turnstile 容器的页面（不是 Turnstile widget 形态）；--solve 在进入 stage2 前直接退出。此尝试按失败计（exit 1）。"
+    }
+  ],
+  "offline_tools": {
+    "vm_snapshot": "Error: no embedded program（orchestrator 没有 iframe 那种 runProgram 内嵌程序）",
+    "stage2_snapshot": "要求 iframe.js / iframe.deobfuscated.js / response.decoded.txt；三者均不存在"
+  },
+  "budget": {
+    "used_this_task": 2,
+    "cumulative": "64/80",
+    "failures": "5/5（达到 policy.md §2 全停线）",
+    "note": "R-2 的 2 次求解+回放成功（62/80，失败 3/5）；R-3 两次失败 → 64/80，失败 5/5。"
+  },
+  "next": "按纪律停止真机实验。若继续，只能走不消耗目标站预算的离线路径：在 D:\\cfsolve-upstream 加 step-budget/日志重建，定位 PreparedSession::state() 卡在哪个 VM 原语/循环；或等 CF 变体轮换/上游跟进。"
+}

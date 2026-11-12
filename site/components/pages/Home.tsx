@@ -16,8 +16,8 @@ const GO = `client := cfsolve.New("http://127.0.0.1:8878", cfsolve.WithToken(tok
 req, _ := http.NewRequestWithContext(ctx, http.MethodGet, "https://example.com", nil)
 resp, err := client.Do(ctx, req) // cache hit → no Python, no browser`;
 
-const PY = `import requests
-r = requests.post(
+const PY = `import httpx
+r = httpx.post(
     "http://127.0.0.1:8878/solve",
     headers={"Authorization": f"Bearer {token}"},
     json={"url": "https://example.com", "want": "clearance"},

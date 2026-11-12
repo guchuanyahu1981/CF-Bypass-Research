@@ -515,6 +515,10 @@ def test_solution_mapping_for_graft_types():
     cookies = solution_from_result(
         None, {"cookies": {"datadome": "c"}}, "datadome")["cookies"]
     assert cookies == {"datadome": "c"}
+    # 真实求解器（captchas/datadome/solve.py）给的是 datadome_cookie，不是 cookies。
+    real = solution_from_result(
+        None, {"datadome_cookie": "d1", "user_agent": "UA", "success": True}, "datadome")
+    assert real["cookies"] == {"datadome": "d1"}, real
     # 有的求解器只在顶层给单个 cookie
     top = solution_from_result(None, {"cf_clearance": "abc"}, "cloudflare_x")["cookies"]
     assert top == {"cf_clearance": "abc"}
@@ -649,7 +653,7 @@ def test_mc_path_uses_sticky_egress(monkeypatch):
 
     async def fake(*a, **k):
         seen["proxy"] = k.get("proxy") or ""
-        return {"success": True, "user_agent": "UA"}
+        return {"success": True, "user_agent": "UA", "datadome_cookie": "DD"}
 
     mod = _types.ModuleType("captchas.datadome.solve")
     mod.solve_datadome = fake
@@ -670,7 +674,7 @@ def test_mc_path_uses_sticky_egress(monkeypatch):
     wait_until(lambda: reg.result(task.task_id).status == "ready", timeout=15)
     payload = reg.result(task.task_id).result_payload()
     assert "10.1.1.1" in seen["proxy"], f"没用粘性出口：{seen}"
-    assert payload["solution"]["cookies"] == {} or isinstance(payload["solution"]["cookies"], dict)
+    assert payload["solution"]["cookies"] == {"datadome": "DD"}, payload["solution"]
 
 
 def test_mc_path_tolerates_egress_lookup_failure(monkeypatch):

@@ -618,3 +618,15 @@ def test_read_jsonl_tail_zero_lines_returns_zero(tmp_path):
     got = read_jsonl_tail(str(f), 0)
     assert got["lines"] == [], got
     assert got["truncated"] is False
+
+
+def test_metrics_label_escapes_host():
+    """host 标签可能来自任意 URL；引号/反斜杠/换行必须转义，否则整页 Prometheus 文本坏掉。"""
+    import metrics as m
+    text = m.render_metrics_text(
+        solves=0, hits=0, failures=0, timeouts=0, rejected_busy=0, restarts=0,
+        browser_alive=False, queue_depth=0, elapsed_sum=0.0, hist=[0],
+        backend_ok={}, backend_err={},
+        ratelimit_fn=lambda: {"total": 1, "hosts": [{"host": 'a"b\\c\nd', "rejected": 1}]},
+    )
+    assert 'host="a\\"b\\\\c\\nd"' in text, text

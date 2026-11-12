@@ -39,3 +39,12 @@ re-read whole files.
 After big code changes, refresh the graph with `graft build` (deterministic,
 no API key, $0).
 <!-- graft:end -->
+
+
+## 四类验收流水线（2026-11-12 定稿）
+
+- 一键：`python run.py accept`（verify → UI 截图 → 真实调用 → 真实 E2E → 独立代码复审 → 汇总）。
+- 单轨：`run.py ui` / `run.py realcalls` / `run.py e2e` / `run.py review`。
+- 汇总证据：`evidence/acceptance.json`（passed/partial/failed）；缺任一轨即非 passed。
+- 复审通道：`claude -p` 独立进程按领域拆分（scripts/review_diff.py）；子 Agent 通道不作验收依据。
+- 通用 SOP：`~/.claude/skills/four-track-acceptance/SKILL.md`。

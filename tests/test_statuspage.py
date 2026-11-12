@@ -188,3 +188,27 @@ def test_status_page_favicon_is_inline_svg():
     assert href.startswith("data:image/svg+xml;base64,"), href
     # 内联 data URI 里的 xmlns 是命名空间声明，不会发起请求；这里断言的是没有外链资源。
     assert not re.search(r"(src|href)\s*=\s*[\"']https?://", STATUS_PAGE_HTML)
+
+
+# ── v6.4.1 P1：无效 token / 503 必须给出可读结论 ──────────
+
+
+def test_status_page_has_inline_labeled_token_input():
+    assert 'class="token-group"' in STATUS_PAGE_HTML
+    assert 'aria-label="Bearer token' in STATUS_PAGE_HTML
+    assert 'id="save"' in STATUS_PAGE_HTML
+    assert "tokenInput.value = token()" not in STATUS_PAGE_HTML
+    assert "已保存 token（重新输入可替换）" in STATUS_PAGE_HTML
+
+
+def test_status_page_surfaces_invalid_token_and_degraded_state():
+    # 带 token 仍 401 → 必须说 token 无效；503 必须解释自愈/启动，而不是清空横幅。
+    assert "token 无效" in STATUS_PAGE_HTML
+    assert "被服务端拒绝（401）" in STATUS_PAGE_HTML
+    assert "worker 卡死（wedged）" in STATUS_PAGE_HTML
+    assert "服务正在自愈或启动中" in STATUS_PAGE_HTML
+
+
+def test_status_page_code_contrast_uses_ink_color():
+    # 浅色主题下 code 继承 --muted 时对比度只有 4.19:1（axe serious）。
+    assert "code { color:var(--ink);" in STATUS_PAGE_HTML

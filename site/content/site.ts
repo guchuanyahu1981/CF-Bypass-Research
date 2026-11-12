@@ -128,7 +128,7 @@ const zh: Dict = {
     how: {
       title: '工作原理 — CF Solver｜检测、求解、凭证、回放',
       description:
-        '从 33 厂商特征检测到 cfsolve / pydoll / Camoufox / FlareSolverr 回落链，再到 cf_clearance 与同 UA 回放，逐段说明每一步的真实行为与失败模式。',
+        '从 34 厂商特征检测到 cfsolve / pydoll / Camoufox / FlareSolverr 回落链，再到 cf_clearance 与同 UA 回放，逐段说明每一步的真实行为与失败模式。',
     },
     benchmarks: {
       title: '实测数据 — CF Solver｜每个数字都有日期与条件',
@@ -148,7 +148,7 @@ const zh: Dict = {
     changelog: {
       title: '版本记录 — CF Solver｜6.4.3',
       description:
-        '6.4.3 全量验收复核：1066 用例、89.93% 覆盖率、40 项真进程 E2E、站点 19 项浏览器 E2E 与 Lighthouse 100×4 全部复跑通过，无产品代码变更。',
+        '6.4.3 全量验收复核：1127 用例、89.78% 覆盖率、40 项真进程 E2E、站点 22 项浏览器 E2E（新增主题/语言/移动菜单回归）与 Lighthouse 桌面 100×4 全部复跑通过，无产品代码变更。',
     },
   },
   nav: {
@@ -182,7 +182,7 @@ const zh: Dict = {
       },
       {
         title: 'route=auto 不白等',
-        body: '33 厂商特征预检测：无盾直接过，不支持的站直接拒绝，已识别的盾自动分发到对应后端。',
+        body: '34 厂商特征预检测：无盾直接过，不支持的站直接拒绝，已识别的盾自动分发到对应后端。',
       },
       {
         title: '多进程共享缓存',
@@ -193,7 +193,7 @@ const zh: Dict = {
     pipelineLede: '不是拓扑图，是调用顺序。每个节点都可以在 /docs 找到对应字段；鼠标或键盘聚焦可看说明。',
     stages: [
       { name: 'Domain', body: '目标域名与 URL；先用 /detect 判断有没有盾。' },
-      { name: 'Detect', body: '33 厂商特征；无盾站直接放行，不认识的目标拒绝。' },
+      { name: 'Detect', body: '34 厂商特征；无盾站直接放行，不认识的目标拒绝。' },
       { name: 'cfsolve', body: 'Rust 纯协议：JS VM + 环境快照回放，无浏览器进程。' },
       { name: 'pydoll', body: 'CDP 直连 Chrome，零 WebDriver；纯协议不适用时的第一层浏览器。' },
       { name: 'Camoufox', body: 'C++ 层指纹篡改的 Firefox；代价是启动慢、内存高。' },
@@ -247,7 +247,7 @@ const zh: Dict = {
     sections: [
       {
         title: '1. 检测：先判断有没有盾',
-        body: '33 厂商特征；无盾站 0.55s 放行、0 次求解。已识别的盾自动分发到对应后端；不支持的站直接拒绝，避免白等 45s。',
+        body: '34 厂商特征；无盾站 0.55s 放行、0 次求解。已识别的盾自动分发到对应后端；不支持的站直接拒绝，避免白等 45s。',
       },
       {
         title: '2. 求解：纯协议优先',
@@ -347,7 +347,7 @@ const zh: Dict = {
       {
         version: '6.4.3',
         date: '2026-11-11',
-        body: '全量验收复核：Python 1066 用例、65 模块覆盖率门禁、40 项真进程 E2E、站点 19 项浏览器 E2E 与 Lighthouse 100×4 全部通过；无产品代码变更。',
+        body: '全量验收复核：Python 1127 用例、68 模块覆盖率门禁、40 项真进程 E2E、站点 22 项浏览器 E2E（新增主题/语言/移动菜单回归）与 Lighthouse 桌面 100×4 全部通过；无产品代码变更。',
       },
       {
         version: '6.4.2',
@@ -413,7 +413,7 @@ const en: Dict = {
     how: {
       title: 'How it works — CF Solver | Detect, solve, token, replay',
       description:
-        'From 33-vendor detection to the cfsolve / pydoll / Camoufox / FlareSolverr chain, then cf_clearance and same-UA replay. Failure modes and limits.',
+        'From 34-vendor detection to the cfsolve / pydoll / Camoufox / FlareSolverr chain, then cf_clearance and same-UA replay. Failure modes and limits.',
     },
     benchmarks: {
       title: 'Benchmarks — CF Solver | Dated and conditioned',
@@ -433,7 +433,7 @@ const en: Dict = {
     changelog: {
       title: 'Changelog — CF Solver | 6.4.3',
       description:
-        '6.4.3 re-runs full acceptance: 1066 Python tests, 65 coverage gates, 40 process E2E, 19 site E2E and Lighthouse 100 on both locales. No product code changed.',
+        '6.4.3 re-runs acceptance: 1127 Python tests, 68 coverage gates, 40 process E2E, 22 site E2E, desktop Lighthouse 100 both locales. No code changed.',
     },
   },
   nav: {
@@ -467,7 +467,7 @@ const en: Dict = {
       },
       {
         title: 'route=auto does not wait blindly',
-        body: '33-vendor detection: no shield passes directly, unsupported targets are rejected, and known shields are dispatched to the right backend.',
+        body: '34-vendor detection: no shield passes directly, unsupported targets are rejected, and known shields are dispatched to the right backend.',
       },
       {
         title: 'Shared multi-process cache',
@@ -478,7 +478,7 @@ const en: Dict = {
     pipelineLede: 'Not a topology graph — the actual call order. Every node maps to a field in /docs; hover or focus to read the note.',
     stages: [
       { name: 'Domain', body: 'Target domain and URL; call /detect first to see whether a shield exists.' },
-      { name: 'Detect', body: '33 vendor signatures; no-shield sites pass, unknown targets are rejected.' },
+      { name: 'Detect', body: '34 vendor signatures; no-shield sites pass, unknown targets are rejected.' },
       { name: 'cfsolve', body: 'Rust pure protocol: JS VM + recorded environment replay, no browser process.' },
       { name: 'pydoll', body: 'CDP straight to Chrome, no WebDriver; the first browser layer when pure protocol does not fit.' },
       { name: 'Camoufox', body: 'Firefox with C++-level fingerprint changes; the cost is slow startup and high memory.' },
@@ -532,7 +532,7 @@ const en: Dict = {
     sections: [
       {
         title: '1. Detect: is there a shield?',
-        body: '33 vendor signatures; a no-shield site passes in 0.55s with 0 solves. Recognized shields are dispatched to the right backend; unsupported targets are rejected instead of waiting 45s.',
+        body: '34 vendor signatures; a no-shield site passes in 0.55s with 0 solves. Recognized shields are dispatched to the right backend; unsupported targets are rejected instead of waiting 45s.',
       },
       {
         title: '2. Solve: pure protocol first',
@@ -629,7 +629,7 @@ const en: Dict = {
     title: 'Changelog',
     lede: 'Capability changes only, not marketing numbers. The full history is in CHANGELOG.md.',
     items: [
-      { version: '6.4.3', date: '2026-11-11', body: 'Full acceptance re-run: 1066 Python tests, 65 coverage gates, 40 process E2E, 19 site browser E2E and Lighthouse 100 on both locales. No product code changed.' },
+      { version: '6.4.3', date: '2026-11-11', body: 'Full acceptance re-run: 1127 Python tests, 68 coverage gates, 40 process E2E, 22 site browser E2E and desktop Lighthouse 100 on both locales. No product code changed.' },
       { version: '6.4.2', date: '2026-11-10', body: 'The site changelog now tracks the facts file, so the content gate that went red on 6.4.1 is green.' },
       { version: '6.4.1', date: '2026-11-10', body: 'Dependency fix: cloakbrowser installed without a license now returns 503 not-configured with a login hint instead of a 500; test counts, coverage and version stay in one facts file.' },
       { version: '6.4.0', date: '2026-11-09', body: 'Engineering-debt round: /detect is audited, HEAD/OPTIONS/405 semantics are complete, error codes and OpenAPI gained the missing branches, and the two pages share one front-end core.' },

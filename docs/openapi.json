@@ -62,10 +62,13 @@
           "stage": {
             "type": "string",
             "enum": [
-              "validate",
               "admit",
+              "detect",
+              "internal",
+              "navigate",
               "solve",
-              "internal"
+              "validate",
+              "wait"
             ]
           },
           "hint": {
@@ -135,8 +138,11 @@
           "route": {
             "type": "string",
             "enum": [
+              "auto",
+              "browser",
+              "direct",
               "fixed",
-              "auto"
+              "pure"
             ],
             "default": "fixed",
             "description": "fixed=按后端链求解；auto=先探测，无盾站直接放行（0 次求解）、不支持的防护直接拒绝"
@@ -185,6 +191,53 @@
           "request_id": {
             "type": "string",
             "description": "与响应头 X-Request-Id 相同的值（v6.0 T-79）"
+          },
+          "want": {
+            "type": "string",
+            "description": "产物类型回显（clearance/awswaf/turnstile/…）"
+          },
+          "cf_clearance": {
+            "type": "string",
+            "description": "want=clearance 时的 cookie 值（敏感，勿落日志）"
+          },
+          "token": {
+            "type": "string",
+            "description": "一次性 token（turnstile/recaptcha_v3）"
+          },
+          "aws_waf_token": {
+            "type": "string",
+            "description": "want=awswaf 时的 cookie 值"
+          },
+          "token_field": {
+            "type": "string",
+            "description": "一次性 token 应塞进哪个表单字段"
+          },
+          "cacheable": {
+            "type": "boolean",
+            "description": "该 want 是否允许服务端缓存"
+          },
+          "expires_in": {
+            "type": "integer",
+            "description": "名义剩余寿命（秒）"
+          },
+          "egress_id": {
+            "type": "string",
+            "description": "求解出口标识；回放必须使用同一出口"
+          },
+          "cookie_list": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "结构化 cookie（name/value/domain/path/expires）"
+          },
+          "no_challenge": {
+            "type": "boolean",
+            "description": "route=auto/direct 探测后确认目标站没有挑战；此时 solved=false，调用方直接请求目标站即可"
+          },
+          "route": {
+            "type": "string",
+            "description": "route 回显（fixed/auto/direct/pure/browser）"
           }
         }
       },
@@ -544,6 +597,46 @@
                   "type": "string"
                 }
               }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "url": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "integer"
+                    },
+                    "protected": {
+                      "type": "boolean"
+                    },
+                    "providers": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    },
+                    "cloudflare_challenge_type": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "recommendation": {
+                      "type": "object"
+                    },
+                    "final_url": {
+                      "type": "string"
+                    },
+                    "backend": {
+                      "type": "string"
+                    },
+                    "request_id": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
             }
           },
           "400": {
@@ -662,6 +755,46 @@
                 "description": "请求级追踪标识（v6.0 T-79）。调用方带合法 X-Request-Id 则沿用，否则服务端生成 12 位 hex。",
                 "schema": {
                   "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "url": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "integer"
+                    },
+                    "protected": {
+                      "type": "boolean"
+                    },
+                    "providers": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    },
+                    "cloudflare_challenge_type": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "recommendation": {
+                      "type": "object"
+                    },
+                    "final_url": {
+                      "type": "string"
+                    },
+                    "backend": {
+                      "type": "string"
+                    },
+                    "request_id": {
+                      "type": "string"
+                    }
+                  }
                 }
               }
             }
@@ -1148,7 +1281,7 @@
         },
         "responses": {
           "200": {
-            "description": "{errorId,errorCode,errorDescription,status,solution?}；任务不存在/过期返回 errorId=1 ERROR_TASK_ID_INVALID",
+            "description": "{errorId,errorCode,errorDescription,status,solution?}；任务不存在/过期返回 errorId=1 ERROR_NO_SUCH_CAPCHA_ID",
             "headers": {
               "X-Request-Id": {
                 "description": "请求级追踪标识（v6.0 T-79）。调用方带合法 X-Request-Id 则沿用，否则服务端生成 12 位 hex。",

@@ -16,19 +16,20 @@
     .\run.ps1 doctor          # 环境自检（含起一次服务做 /health 探活）
     .\run.ps1 test            # Python 全量测试 + 覆盖率门槛 80%
     .\run.ps1 go              # Go vet + test -race
-    .\run.ps1 verify          # 以上全跑（提交前必跑）
+    .\run.ps1 verify          # 提交前必跑：pytest/覆盖率/compileall/Go/findings/e2e/smoke/卫生/研究台/服务报告（doctor/bench 单独跑）
     .\run.ps1 smoke -Port 8878
     .\run.ps1 e2e -SkipBrowser
 #>
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('doctor', 'test', 'quick', 'go', 'findings', 'smoke', 'e2e', 'start', 'stop', 'bench', 'verify', 'ui', 'realcalls', 'report', 'egress', 'help')]
+    [ValidateSet('doctor', 'test', 'quick', 'go', 'findings', 'smoke', 'e2e', 'start', 'stop', 'bench', 'verify', 'ui', 'realcalls', 'accept', 'review', 'report', 'egress', 'mcp', 'help')]
     [string]$Command = 'help',
 
     [int]$Port = 8878,
     [switch]$NoAuth,
-    [switch]$SkipBrowser
+    [switch]$SkipBrowser,
+    [switch]$SkipSmoke
 )
 
 $ErrorActionPreference = 'Stop'
@@ -42,6 +43,7 @@ try {
     $pyArgs = @('run.py', $Command, '--port', $Port)
     if ($NoAuth) { $pyArgs += '--no-auth' }
     if ($SkipBrowser) { $pyArgs += '--skip-browser' }
+    if ($SkipSmoke) { $pyArgs += '--skip-smoke' }
     & python @pyArgs
     exit $LASTEXITCODE
 }

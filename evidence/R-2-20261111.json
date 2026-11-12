@@ -1,0 +1,48 @@
+{
+  "task_id": "R-2",
+  "timestamp": "2026-11-11T16:35:00+08:00",
+  "status": "closed",
+  "summary": "真实 CF 站 udemy.com 端到端闭环：出口 158.101.195.118（本地代理 127.0.0.1:10808）上 solver 6.03s 拿到 330 字节 cf_clearance，响应 egress_id=ip:158.101.195.118 与登记值一致；同 UA/同 cookie 回放 200、199790 字节、正常标题；/audit 读回 event=solve 行。",
+  "egress": {
+    "proxy": "http://127.0.0.1:10808",
+    "registered_before_batch": "129.153.97.251",
+    "observed_before_batch": "158.101.195.118",
+    "registered_for_batch": "158.101.195.118",
+    "note": "出口 IP 已变化；批次前用 run.py egress 实测发现登记值过期，按实测值重新登记后才开始求解（这正是 R-2 要验证的联动）。"
+  },
+  "solve": {
+    "url": "https://www.udemy.com/",
+    "status": 200,
+    "ok": true,
+    "solved": true,
+    "want": "clearance",
+    "cf_clearance_len": 330,
+    "user_agent_len": 80,
+    "elapsed_sec": 6.03,
+    "cached": false,
+    "egress_id": "ip:158.101.195.118",
+    "backend": "camoufox",
+    "request_id": "d00708b461eb"
+  },
+  "replay": {
+    "method": "GET",
+    "url": "https://www.udemy.com/",
+    "same_user_agent": true,
+    "cookie_names_from_solver": ["__cf_bm", "ud_user_jwt", "eva", "__udmy_evid", "udmy_branded_partner", "ud_cache_campaign_code", "eventing_session_id", "evi", "__udmy_2_v57r", "ud_rule_vars", "ud_cache_brand", "ud_cache_marketplace_country", "ud_cache_price_country", "ud_cache_release", "ud_cache_user", "ud_cache_version", "ud_cache_language", "ud_cache_device", "ud_cache_logged_in", "ud_country_code", "cf_clearance", "__cf_bm"],
+    "status": 200,
+    "body_len": 199790,
+    "title": "Udemy: Online Courses for Skills, Careers & AI",
+    "markers": {"cf_chl": false, "challenge_platform": false, "title_normal": true},
+    "note": "正文里出现字面量 just a moment，但 cf_chl/challenge-platform 均无、标题正常 —— 是页面文案/脚本中的短语，不是挑战页。"
+  },
+  "audit": {
+    "line": {"event": "solve", "host": "www.udemy.com", "path": "/solve", "ok": true, "cached": false, "elapsed": 6.03, "request_id": "d00708b461eb"},
+    "shutdown": {"status": 202, "state": "shutting-down", "request_id": "67783b164733"}
+  },
+  "budget": {
+    "used_this_batch": 2,
+    "cumulative": "62/80",
+    "failures": "3/5",
+    "note": "求解 1 + 回放 1；两次均成功。"
+  }
+}

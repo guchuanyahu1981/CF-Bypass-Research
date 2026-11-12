@@ -1,0 +1,36 @@
+{
+  "task_id": "R-1",
+  "timestamp": "2026-11-11T12:00:00+08:00",
+  "status": "mechanical-pass (stealth pending)",
+  "summary": "cloakbrowser 0.7.2 无许可证（License: none、二进制未安装）时，用 CLOAKBROWSER_BINARY_PATH 指向本机 Playwright Chromium，wrapper 在 license 校验之前直接使用本地二进制：浏览器可启动，captchas/turnstile 在官方测试 sitekey 上机械跑通（7.3s，XXXX.DUMMY.TOKEN.XXXX）。这不证明 CloakBrowser 的 C++ stealth 补丁有效——本地 Chromium 没有这些补丁，测试 key 本身恒通过；真实挑战的反检测成功率仍需专有二进制或自建 stealth 引擎。",
+  "license_state": "License: none; Binary: None; Installed: False",
+  "override": {
+    "env": "CLOAKBROWSER_BINARY_PATH",
+    "value": "C:\\Users\\Administrator.DESKTOP-EGNE9ND\\AppData\\Local\\ms-playwright\\chromium-1254\\chrome-win64\\chrome.exe",
+    "code": "cloakbrowser/download.py::ensure_binary 先检查本地覆盖，命中即 return，不读取/校验 license"
+  },
+  "commands_executed": [
+    {
+      "cmd": "python -m cloakbrowser info",
+      "result": "License: none (a launch needs a key); Binary: None; Installed: False"
+    },
+    {
+      "cmd": "python <scratch>/r1_launch.py",
+      "result": "TITLE= mechanical-ok; UA=HeadlessChrome/158.0.0.0; LAUNCH_OK",
+      "exit_code": 0
+    },
+    {
+      "cmd": "python <scratch>/r1_turnstile.py",
+      "sitekey": "1x00000000000000000000AA",
+      "url": "https://demo.turnstile.workers.dev/",
+      "result": "token=XXXX.DUMMY.TOKEN.XXXX; expires_in=300; elapsed=7.3; method=route",
+      "exit_code": 0
+    }
+  ],
+  "limits": [
+    "local Chromium has no CloakBrowser C++ stealth patches (canvas/WebGL/audio/CDP behavior/humanize)",
+    "the official test sitekey always passes; this is a mechanical test, not a real-challenge success",
+    "real stealth validation remains blocked on the proprietary binary OR an own stealth engine (user's localization direction)"
+  ],
+  "next": "如果要做真实挑战的 stealth 验证，按用户方向自建本地引擎（Playwright/Chromium + patchright/自研补丁），不再依赖 cloakbrowser 的 license key"
+}

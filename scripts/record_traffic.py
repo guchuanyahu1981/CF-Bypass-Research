@@ -23,7 +23,9 @@ Playwright 的 `page.on("request"/"response")` 就是同一件事，且**零新�
 ## 产物
 
     <out>/traffic.jsonl   一行一个请求/响应配对（新的在后，便于 diff 与 grep）
-    <out>/summary.json    汇总：按类型计数、状态码分布、时序、detect 结论、cookie 名清单
+                         每条含 `wait_ms`（请求→响应耗时）、`redirected_from`
+                         （上一跳 URL）与 `redirect_count`（跳数）
+    <out>/summary.json    汇总：按类型计数、状态码分布、时序、跳转数、detect 结论、cookie 名清单
     <out>/manifest.json   元数据（URL/UA/时间/预算消耗/是否截断）
 
 ## 用法
@@ -170,6 +172,27 @@ def _resource_kind(request) -> str:
         return "other"
 
 
+def redirect_info(request) -> tuple[str | None, int]:
+    """返回 `(上一跳 URL, 跳数)`（纯函数）。
+
+    Playwright 的 `Request.redirected_from` 指向前一跳**请求**；沿它往回走就是整条
+    跳转链。只记 URL 与跳数，不记状态码 —— 状态码在每一跳各自的记录里。
+    URL 依旧过 `redact_url`：跳转链是最容易把 `user:pass@` 带进落盘文件的地方。
+    """
+    prev = getattr(request, "redirected_from", None)
+    if prev is None:
+        return None, 0
+    count = 0
+    seen: set[int] = set()
+    cur = prev
+    while cur is not None and count < 50 and id(cur) not in seen:
+        seen.add(id(cur))
+        count += 1
+        cur = getattr(cur, "redirected_from", None)
+    prev_url = str(getattr(prev, "url", "") or "")
+    return (redact_url(prev_url) if prev_url else None), count
+
+
 def summarize(records: list[dict]) -> dict:
     """从 jsonl 记录里算出汇总（纯函数，可离线测）。"""
     by_type: dict[str, int] = {}
@@ -177,6 +200,7 @@ def summarize(records: list[dict]) -> dict:
     hosts: dict[str, int] = {}
     set_cookie_names: list[str] = []
     total_bytes = 0
+    redirects = 0
     first_ts = last_ts = None
     failures: list[str] = []
     for rec in records:
@@ -195,6 +219,8 @@ def summarize(records: list[dict]) -> dict:
                 set_cookie_names.append(name)
         if isinstance(rec.get("body_bytes"), int):
             total_bytes += rec["body_bytes"]
+        if rec.get("redirect_count"):
+            redirects += 1
         ts = rec.get("ts")
         if isinstance(ts, (int, float)):
             first_ts = ts if first_ts is None else min(first_ts, ts)
@@ -203,6 +229,7 @@ def summarize(records: list[dict]) -> dict:
             failures.append(f"{rec.get('url')}: {rec['error']}")
     return {
         "requests": len(records),
+        "redirects": redirects,
         "by_resource_type": dict(sorted(by_type.items(), key=lambda kv: -kv[1])),
         "by_status": dict(sorted(by_status.items(), key=lambda kv: -kv[1])),
         "by_host": dict(sorted(hosts.items(), key=lambda kv: -kv[1])),
@@ -232,7 +259,7 @@ def record(url: str, out_dir: Path, *, engine: str, ua: str, timeout: float,
             ctx_kw["user_agent"] = ua
         ctx = browser.new_context(**ctx_kw)
         page = ctx.new_page()
-        pending: dict = {}
+        pending: dict[int, tuple[dict, float]] = {}
         accepted = 0
 
         def on_request(req):
@@ -249,23 +276,28 @@ def record(url: str, out_dir: Path, *, engine: str, ua: str, timeout: float,
                 truncated = True
                 return
             accepted += 1
-            pending[id(req)] = {
+            redirected_from, redirect_count = redirect_info(req)
+            pending[id(req)] = ({
                 "ts": round(time.time(), 3),
                 "type": _resource_kind(req),
                 "method": req.method,
                 "url": redact_url(req.url),
                 "request_headers": sanitize_headers(req.headers, KEEP_REQUEST_HEADERS),
-            }
+                "redirected_from": redirected_from,
+                "redirect_count": redirect_count,
+            }, time.perf_counter())
 
         def on_response(resp):
-            rec = pending.pop(id(resp.request), None)
-            if rec is None:          # 超过预算的请求不补记（预算就是预算）
+            entry = pending.pop(id(resp.request), None)
+            if entry is None:        # 超过预算的请求不补记（预算就是预算）
                 return
+            rec, started = entry
             # ⚠️ **先入账，再取任何可能切 greenlet 的东西**（`headers_array()` / `body()`
             # 都是方法调用，会让排队的 request 事件插进来）。入账后所有补充都是往
             # 同一个 dict 里填字段，重入也安全。
             records.append(rec)
             rec["status"] = resp.status
+            rec["wait_ms"] = round((time.perf_counter() - started) * 1000, 1)
             # ⚠️ `headers_array` 是**方法**（Playwright 的同步 API），必须调用。
             # 写成属性访问会拿到一个 bound method，于是 Set-Cookie 一个都收不到 ——
             # 而这正是"挑战种了哪几个 cookie"的唯一来源（`resp.headers` 里根本没有
@@ -284,10 +316,12 @@ def record(url: str, out_dir: Path, *, engine: str, ua: str, timeout: float,
                 rec["body_bytes"] = None
 
         def on_failed(req):
-            rec = pending.pop(id(req), None)
-            if rec is None:
+            entry = pending.pop(id(req), None)
+            if entry is None:
                 return
+            rec, started = entry
             rec.update({"status": None,
+                        "wait_ms": round((time.perf_counter() - started) * 1000, 1),
                         "error": redact_any(str(req.failure or "failed")[:160], url)})
             records.append(rec)
 
@@ -412,8 +446,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"[dry-run] UA：{args.ua or '不覆盖（camoufox 用 persona，chromium 用自带 UA）'}")
         print(f"[dry-run] 预算：最多记录 {args.max_requests} 个请求/响应配对")
         print(f"[dry-run] 时序：导航（{args.timeout:.0f}s 超时）→ 再观察 {args.wait_after:.0f}s")
-        print("[dry-run] 会录：请求/响应头（白名单）、状态码、资源类型、"
-              "Set-Cookie 名（**不记值**）、body 大小、失败原因")
+        print("[dry-run] 会录：请求/响应头（白名单）、状态码、资源类型、每请求耗时、"
+              "跳转链（上一跳 URL/跳数）、Set-Cookie 名（**不记值**）、body 大小、失败原因")
         print(f"[dry-run] 预计产物：{args.out}/traffic.jsonl + summary.json + manifest.json")
         return 0
 

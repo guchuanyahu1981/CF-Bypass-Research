@@ -136,6 +136,8 @@ def run_hot(args) -> dict:
     host, port = srv.server_address[0], srv.server_address[1]
     latencies: list[float] = []
     errors = 0
+    by_status: dict[int, int] = {}
+    by_error: dict[str, int] = {}
     lock = threading.Lock()
     stop_at = time.monotonic() + args.duration
 
@@ -144,6 +146,8 @@ def run_hot(args) -> dict:
         conn = http.client.HTTPConnection(host, port, timeout=10)
         local: list[float] = []
         local_err = 0
+        local_status: dict[int, int] = {}
+        local_error: dict[str, int] = {}
         while time.monotonic() < stop_at:
             t0 = time.perf_counter()
             try:
@@ -158,8 +162,10 @@ def run_hot(args) -> dict:
                 resp.read()
                 if resp.status != 200:
                     local_err += 1
-            except Exception:  # noqa: BLE001
+                    local_status[resp.status] = local_status.get(resp.status, 0) + 1
+            except Exception as e:  # noqa: BLE001
                 local_err += 1
+                local_error[type(e).__name__] = local_error.get(type(e).__name__, 0) + 1
                 try:
                     conn.close()
                 except Exception:  # noqa: BLE001
@@ -170,6 +176,10 @@ def run_hot(args) -> dict:
         with lock:
             latencies.extend(local)
             errors += local_err
+            for k, v in local_status.items():
+                by_status[k] = by_status.get(k, 0) + v
+            for k, v in local_error.items():
+                by_error[k] = by_error.get(k, 0) + v
 
     threads = [threading.Thread(target=worker) for _ in range(args.workers)]
     started = time.monotonic()
@@ -184,6 +194,8 @@ def run_hot(args) -> dict:
     return {
         "mode": "hot", "workers": args.workers, "duration_sec": round(elapsed, 2),
         "requests": len(latencies), "errors": errors,
+        "by_status": dict(sorted(by_status.items())),
+        "by_error": dict(sorted(by_error.items())),
         "qps": round(qps, 1),
         "p50_ms": round(statistics.median(latencies), 2) if latencies else 0,
         "p90_ms": round(pct(latencies, 0.90), 2),
@@ -327,6 +339,15 @@ def run_share(args) -> dict:
         finally:
             import shutil
 
+            # communicate(timeout) 超时时子进程还活着；不杀就会占着共享 cache/WAL，
+            # 影响下一轮（Critic P3-12）。
+            for leftover in procs:
+                if leftover.poll() is None:
+                    try:
+                        leftover.kill()
+                        leftover.wait(timeout=5)
+                    except Exception:  # noqa: BLE001
+                        pass
             shutil.rmtree(cache_dir, ignore_errors=True)
         return solves, hits, failures
 
@@ -356,6 +377,42 @@ def run_share(args) -> dict:
 
 
 # ── 入口 ─────────────────────────────────────────────
+def judge(mode: str, result: dict) -> tuple[bool, list[str]]:
+    """验收口径：指标达标**且**错误率不超过 1%。
+
+    旧实现只看 QPS/accepted_ratio —— 100% 失败也能 PASS（错误只写进结果，不参与判定）。
+    对 CF 项目尤其危险：大量 403 反而可能让 QPS 更高。
+    """
+    target = TARGETS[mode]
+    reasons: list[str] = []
+    passed = True
+    if mode == "share":
+        if result["sequential"]["solves"] != result["sequential"]["expected_solves"]:
+            passed = False
+            reasons.append("sequential.solves 不等于 expected_solves")
+        if result["sequential"]["failures"] != 0:
+            passed = False
+            reasons.append("sequential.failures 非 0")
+    else:
+        actual = result.get(target["field"])
+        if actual is None or actual < target[target["field"]]:
+            passed = False
+            reasons.append(f"{target['field']}={actual} 低于门槛 {target[target['field']]}")
+        if mode == "cold" and result.get("solves_per_request", 1.0) > 1.5:
+            passed = False
+            reasons.append("solves_per_request > 1.5（同一请求被放大成多次求解）")
+
+    requests = int(result.get("requests") or 0)
+    errors = int(result.get("errors") or 0)
+    error_ratio = (errors / requests) if requests else 0.0
+    result["error_ratio"] = round(error_ratio, 6)
+    max_ratio = float(target.get("max_error_ratio", 0.01))
+    if requests and error_ratio > max_ratio:
+        passed = False
+        reasons.append(f"error_ratio={error_ratio:.2%} 超过 {max_ratio:.2%}")
+    return passed, reasons
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="CF-Bypass-Research 压测/演练（默认离线）")
     ap.add_argument("--mode", choices=["hot", "cold", "share"], default="hot")
@@ -395,18 +452,10 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     target = TARGETS[args.mode]
-    if args.mode == "share":
-        # 验收口径：**先后到达**只解一次（文档承诺），且没有子进程失败。
-        # burst 阶段的数据只做披露，不作为门禁（当前实现没有跨进程互斥）。
-        passed = (result["sequential"]["solves"] == result["sequential"]["expected_solves"]
-                  and result["sequential"]["failures"] == 0)
-    else:
-        actual = result.get(target["field"])
-        passed = actual >= target[target["field"]]
-        if args.mode == "cold" and result.get("solves_per_request", 1.0) > 1.5:
-            passed = False   # 同一请求被放大成多次求解 = 没去重
+    passed, reasons = judge(args.mode, result)
     result["verdict"] = "PASS" if passed else "FAIL"
     result["acceptance"] = target["desc"]
+    result["verdict_reasons"] = reasons
 
     if args.json:
         print(json.dumps(result, ensure_ascii=False, indent=2))

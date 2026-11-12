@@ -47,6 +47,11 @@ jobs:
         run: python scripts/check_repo_hygiene.py
       - name: 语法检查
         run: python -m compileall -q solver scripts tests captchas
+      - name: 特征表自检（本地完整性；上游缺失时 SKIP 新鲜度对照）
+        # CI 没有 Antibot-Detector 的 checkout，上游对照必然 SKIP；这一步守的是
+        # "本地表没被手改坏"：id 重复、confidence 越界、元数据 count 不符、正则非法。
+        # 有上游 checkout 的环境跑同一命令会继续做逐项对照。
+        run: python scripts/gen_detect_signatures.py --check
       - name: 测试 + 覆盖率门槛
         # --cov-fail-under 已下沉到 check-coverage.mjs 的 _scopes：
         # solver/ 与 captchas/ 的基线差得远，混在一个整体数字里会互相抵消。

@@ -174,3 +174,13 @@ test('site updatedAt is a real date that covers the latest release', () => {
     assert.ok(SITE.updatedAt >= latest, `${locale}: updatedAt ${SITE.updatedAt} predates release ${latest}`);
   }
 });
+test('site Python examples use the declared dependency (httpx, not requests)', () => {
+  const rel = 'components/pages/Home.tsx';
+  const file = path.join(process.cwd(), rel);
+  assert.ok(fs.existsSync(file), `${rel}: missing Python example`);
+  const text = fs.readFileSync(file, 'utf8');
+  assert.ok(text.includes('import httpx'), `${rel}: must import httpx`);
+  assert.ok(/httpx\.(post|get)\(/.test(text), `${rel}: must call httpx.post/get`);
+  assert.ok(!text.includes('import requests'), `${rel}: uses requests, but requirements.txt only ships httpx`);
+  assert.ok(!/requests\.(post|get)\(/.test(text), `${rel}: uses requests.*, but requirements.txt only ships httpx`);
+});

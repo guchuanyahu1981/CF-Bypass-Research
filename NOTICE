@@ -1,0 +1,36 @@
+# NOTICE — third-party components and provenance
+
+This repository is MIT-licensed (see `LICENSE`). The following third-party projects are
+referenced; only the items marked “vendored/derived” are present in this tree.
+
+## Antibot-Detector (cross-check only)
+
+- Upstream: https://github.com/scrapfly/Antibot-Detector
+- License: **Non-Profit Open Software License 3.0 (NPOSL-3.0)**, Copyright (c) 2026 Scrapfly.
+  This is **not** MIT.
+- Use here: `solver/detect.py` is an independently curated table of **factual signals**
+  (cookie/header/URL strings and response text observed in HTTP responses and public vendor
+  documentation). No upstream source code or JSON data files are copied.
+- `scripts/gen_detect_signatures.py` is comparison-only by default. `--write` is opt-in and must
+  be reviewed for NPOSL-3.0 compliance before it is used to import upstream data.
+
+## captcha-solver (derived; license pending written confirmation)
+
+- Upstream: https://github.com/waguriagentic/captcha-solver (git author: `waguriagentic`).
+- License: **no LICENSE file was present** in the checked-out tree at import time (2026-11-11).
+- Use here: `captchas/` is derived from this project. The project owner asserts ownership and
+  MIT licensing for this code as of 2026-11-11. Until written confirmation is on file, treat
+  redistribution as pending review. See `captchas/README.md`.
+
+## Referenced but not vendored
+
+- `chris124567/cfsolve` — MIT. Binary built separately by the user; not vendored.
+- `daijro/camoufox` — MPL-2.0. Installed via pip; not vendored.
+- `CloakHQ/CloakBrowser` — wrapper MIT; the compiled Chromium binary is proprietary and is
+  **not** distributed with this repository.
+- `pydoll` — Apache-2.0. Installed via pip; not vendored.
+- `FlareSolverr` — MIT. Used as an optional self-hosted backend; not vendored.
+- `lexiforest/curl_cffi` — MIT. Optional Python dependency; not vendored.
+
+GPL/AGPL projects reviewed during research (e.g. Cloudflare-Faker, undetected-chromedriver,
+donsetch, lightpanda, SpiderBOX, cruip templates) were **not** copied into this repository.

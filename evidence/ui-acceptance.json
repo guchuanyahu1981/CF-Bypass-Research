@@ -1,0 +1,467 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-11-12T23:26:09",
+  "git_sha": "fd981ee",
+  "total": 70,
+  "passed": 70,
+  "failed": 0,
+  "checks": [
+    {
+      "case": "ready",
+      "name": "ready/状态页徽章",
+      "ok": true,
+      "detail": "ready/badge ready"
+    },
+    {
+      "case": "ready",
+      "name": "ready/状态页无 JS 错误",
+      "ok": true,
+      "detail": "[]"
+    },
+    {
+      "case": "ready",
+      "name": "ready/健康面板有内容",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "case": "ready",
+      "name": "ready/键盘首个焦点是 token",
+      "ok": true,
+      "detail": "token"
+    },
+    {
+      "case": "ready",
+      "name": "ready/键盘第二个焦点是保存",
+      "ok": true,
+      "detail": "save"
+    },
+    {
+      "case": "ready",
+      "name": "ready/状态页/axe 0 违规",
+      "ok": true,
+      "detail": "0"
+    },
+    {
+      "case": "ready",
+      "name": "ready/控制台徽章",
+      "ok": true,
+      "detail": "ready/badge ready"
+    },
+    {
+      "case": "ready",
+      "name": "ready/控制台无 JS 错误",
+      "ok": true,
+      "detail": "[]"
+    },
+    {
+      "case": "ready",
+      "name": "ready/控制台键盘首个焦点是 token",
+      "ok": true,
+      "detail": "token"
+    },
+    {
+      "case": "ready",
+      "name": "ready/控制台键盘第二个焦点是保存",
+      "ok": true,
+      "detail": "save"
+    },
+    {
+      "case": "ready",
+      "name": "ready/控制台/axe 0 违规",
+      "ok": true,
+      "detail": "0"
+    },
+    {
+      "case": "ready",
+      "name": "ready/保存按钮写入 token",
+      "ok": true,
+      "detail": "'new-token-value'"
+    },
+    {
+      "case": "ready",
+      "name": "ready/自动刷新可开启",
+      "ok": true,
+      "detail": "true/自动刷新（开）"
+    },
+    {
+      "case": "ready",
+      "name": "ready/自动刷新可关闭",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "case": "ready",
+      "name": "ready/刷新按钮完成并恢复可用",
+      "ok": true,
+      "detail": "[]"
+    },
+    {
+      "case": "ready",
+      "name": "ready/320px 状态页无横向溢出",
+      "ok": true,
+      "detail": "overflow=0"
+    },
+    {
+      "case": "ready",
+      "name": "ready/320px 控制台无横向溢出",
+      "ok": true,
+      "detail": "overflow=0"
+    },
+    {
+      "case": "ready",
+      "name": "ready/360px 状态页无横向溢出",
+      "ok": true,
+      "detail": "overflow=0"
+    },
+    {
+      "case": "ready",
+      "name": "ready/360px 控制台无横向溢出",
+      "ok": true,
+      "detail": "overflow=0"
+    },
+    {
+      "case": "wedged",
+      "name": "wedged/状态页徽章文字",
+      "ok": true,
+      "detail": "wedged"
+    },
+    {
+      "case": "wedged",
+      "name": "wedged/状态页徽章有专属类",
+      "ok": true,
+      "detail": "badge wedged"
+    },
+    {
+      "case": "wedged",
+      "name": "wedged/徽章是实心红（不是默认深色）",
+      "ok": true,
+      "detail": "rgb(185, 28, 28)"
+    },
+    {
+      "case": "wedged",
+      "name": "wedged/显示卡死原因",
+      "ok": true,
+      "detail": "state\nwedged\nok\nfalse\nworker\nalive\nbrowser\ndead\n卡死原因\n任务超期未返回（budget=45s），worker "
+    },
+    {
+      "case": "wedged",
+      "name": "wedged/显示处置动作",
+      "ok": true,
+      "detail": "state\nwedged\nok\nfalse\nworker\nalive\nbrowser\ndead\n卡死原因\n任务超期未返回（budget=45s），worker 疑似卡死\n处置\nwedge_restart 未开启：请手动重启该 worker；"
+    },
+    {
+      "case": "wedged",
+      "name": "wedged/无 JS 错误",
+      "ok": true,
+      "detail": "['console: Failed to load resource: the server responded with a status of 503 (Service Unavailable)']"
+    },
+    {
+      "case": "wedged",
+      "name": "wedged/控制台徽章是 wedged",
+      "ok": true,
+      "detail": "wedged/badge wedged"
+    },
+    {
+      "case": "wedged",
+      "name": "wedged/控制台横幅说明不会自愈",
+      "ok": true,
+      "detail": "worker 卡死（wedged）：服务不会自愈。任务超期未返回（budget=45s），worker 疑似卡死；wedge_restart 未开启，需手动重启"
+    },
+    {
+      "case": "wedged",
+      "name": "wedged/控制台无 JS 错误",
+      "ok": true,
+      "detail": "['console: Failed to load resource: the server responded with a status of 503 (Service Unavailable)']"
+    },
+    {
+      "case": "degraded",
+      "name": "degraded/徽章不是 wedged",
+      "ok": true,
+      "detail": "degraded"
+    },
+    {
+      "case": "degraded",
+      "name": "degraded/横幅说明正在自愈或启动中",
+      "ok": true,
+      "detail": "/health 返回 503（state=degraded），服务正在自愈或启动中；卡片来自本次响应，可能不完整。"
+    },
+    {
+      "case": "degraded",
+      "name": "degraded/卡片来自本次响应，不冒充旧快照",
+      "ok": true,
+      "detail": "0"
+    },
+    {
+      "case": "无token",
+      "name": "无token/状态页横幅指明去哪拿 token",
+      "ok": true,
+      "detail": "服务活着（健康信息是公开的）。要看「在途请求」与「最近事件」需要 Bearer token：从服务端的 .env 里取 CF_SOLVE_TOKEN= 后面的值"
+    },
+    {
+      "case": "无token",
+      "name": "无token/在途面板不是空白",
+      "ok": true,
+      "detail": "提示\n填入 token 后自动显示"
+    },
+    {
+      "case": "无token",
+      "name": "无token/健康信息仍可见（公开）",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "case": "无token",
+      "name": "无token/无 JS 错误（401 是预期）",
+      "ok": true,
+      "detail": "['console: Failed to load resource: the server responded with a status of 401 (Unauthorized)', 'console: Failed to load resource: the server responded with a status of 401 (Unauthorized)']"
+    },
+    {
+      "case": "invalid-token",
+      "name": "invalid-token/状态页徽章",
+      "ok": true,
+      "detail": "token 无效/badge unauthorized"
+    },
+    {
+      "case": "invalid-token",
+      "name": "invalid-token/状态页横幅指出 401",
+      "ok": true,
+      "detail": "token 被服务端拒绝（401）。请确认输入的是服务端 .env 里的 CF_SOLVE_TOKEN 值；重新保存后页面会自动刷新。"
+    },
+    {
+      "case": "invalid-token",
+      "name": "invalid-token/控制台初始可加载",
+      "ok": true,
+      "detail": "ready"
+    },
+    {
+      "case": "invalid-token",
+      "name": "invalid-token/控制台服务徽章仍由 health 驱动",
+      "ok": true,
+      "detail": "ready/badge ready"
+    },
+    {
+      "case": "invalid-token",
+      "name": "invalid-token/控制台横幅指出 401",
+      "ok": true,
+      "detail": "审计日志：token 被服务端拒绝（401）。请确认输入的是服务端 .env 里的 CF_SOLVE_TOKEN 值；重新保存后会自动刷新。"
+    },
+    {
+      "case": "invalid-token",
+      "name": "invalid-token/审计面板指出 401",
+      "ok": true,
+      "detail": "token 无效（401）：无法读取审计日志"
+    },
+    {
+      "case": "invalid-token",
+      "name": "invalid-token/控制台无 JS 错误",
+      "ok": true,
+      "detail": "['console: Failed to load resource: the server responded with a status of 401 (Unauthorized)']"
+    },
+    {
+      "case": "audit",
+      "name": "audit/表格渲染出 8 行",
+      "ok": true,
+      "detail": "8"
+    },
+    {
+      "case": "audit",
+      "name": "audit/含表头",
+      "ok": true,
+      "detail": "时间\t事件\t目标\t结果\t耗时\t后端\n06:40:07\tsolve\tsite7.example.com\tok\t16.5 s"
+    },
+    {
+      "case": "audit",
+      "name": "audit/失败行有标记",
+      "ok": true,
+      "detail": "时间\t事件\t目标\t结果\t耗时\t后端\n06:40:07\tsolve\tsite7.example.com\tok\t16.5 s\tcamoufox\n06:40:06\tsolve\tsite6.example.com\tunsolved\t16.5 s\tc"
+    },
+    {
+      "case": "audit",
+      "name": "audit/耗时按秒显示（不是 16530 ms）",
+      "ok": true,
+      "detail": "时间\t事件\t目标\t结果\t耗时\t后端\n06:40:07\tsolve\tsite7.example.com\tok\t16.5 s\tcamoufox\n06:40:06\tsolve\tsite6.example.com\tunsolved\t16.5 s\tc"
+    },
+    {
+      "case": "audit",
+      "name": "audit/列宽未被单列撑爆",
+      "ok": true,
+      "detail": "[189, 127, 348, 192, 143, 211] total=1210"
+    },
+    {
+      "case": "audit",
+      "name": "audit/无 JS 错误",
+      "ok": true,
+      "detail": "[]"
+    },
+    {
+      "case": "audit",
+      "name": "audit/顶部刷新会带上审计区块",
+      "ok": true,
+      "detail": "rows=9"
+    },
+    {
+      "case": "audit",
+      "name": "audit/顶部刷新无新增 JS 错误",
+      "ok": true,
+      "detail": "[]"
+    },
+    {
+      "case": "audit",
+      "name": "audit/审计刷新按钮可用",
+      "ok": true,
+      "detail": "9"
+    },
+    {
+      "case": "audit",
+      "name": "audit/自动刷新开启后会拉取",
+      "ok": true,
+      "detail": "3->4"
+    },
+    {
+      "case": "audit",
+      "name": "audit/自动刷新关闭后不再拉取",
+      "ok": true,
+      "detail": "5->5"
+    },
+    {
+      "case": "audit",
+      "name": "audit/清除 token 后 sessionStorage 为空",
+      "ok": true,
+      "detail": "None"
+    },
+    {
+      "case": "audit",
+      "name": "audit/清除 token 后自动刷新取消",
+      "ok": true,
+      "detail": "False"
+    },
+    {
+      "case": "audit",
+      "name": "audit/清除 token 后旧审计表被清空",
+      "ok": true,
+      "detail": "未加载"
+    },
+    {
+      "case": "audit",
+      "name": "audit/清除 token 后不再后台拉取",
+      "ok": true,
+      "detail": "5->5"
+    },
+    {
+      "case": "audit",
+      "name": "audit/保存 token 后恢复审计表",
+      "ok": true,
+      "detail": "9"
+    },
+    {
+      "case": "audit",
+      "name": "audit/320px 页面无横向溢出",
+      "ok": true,
+      "detail": "{'overflow': 0, 'scroll': 457, 'client': 266}"
+    },
+    {
+      "case": "audit",
+      "name": "audit/320px 宽表在容器内滚动",
+      "ok": true,
+      "detail": "{'overflow': 0, 'scroll': 457, 'client': 266}"
+    },
+    {
+      "case": "stale",
+      "name": "stale/初始 ready",
+      "ok": true,
+      "detail": "ready"
+    },
+    {
+      "case": "stale",
+      "name": "stale/服务停止后徽章不再是 ready",
+      "ok": true,
+      "detail": "degraded/badge degraded"
+    },
+    {
+      "case": "stale",
+      "name": "stale/横幅说明服务不可用",
+      "ok": true,
+      "detail": "/health 返回 503（state=degraded），服务正在自愈或启动中；卡片来自本次响应，可能不完整。"
+    },
+    {
+      "case": "stale",
+      "name": "stale/503 是当前响应，不冒充旧快照",
+      "ok": true,
+      "detail": "stale=0"
+    },
+    {
+      "case": "stale",
+      "name": "stale/无新增 JS 错误",
+      "ok": true,
+      "detail": "['console: Failed to load resource: the server responded with a status of 503 (Service Unavailable)']"
+    },
+    {
+      "case": "dark",
+      "name": "dark/状态页 ready",
+      "ok": true,
+      "detail": "ready"
+    },
+    {
+      "case": "dark",
+      "name": "dark/状态页/axe 0 违规",
+      "ok": true,
+      "detail": "0"
+    },
+    {
+      "case": "dark",
+      "name": "dark/控制台 ready",
+      "ok": true,
+      "detail": "ready"
+    },
+    {
+      "case": "dark",
+      "name": "dark/控制台/axe 0 违规",
+      "ok": true,
+      "detail": "0"
+    },
+    {
+      "case": "不可达",
+      "name": "不可达/页面加载失败可被捕获",
+      "ok": true,
+      "detail": "Page.goto: net::ERR_CONNECTION_REFUSED at http://127.0.0.1:3"
+    }
+  ],
+  "axe": [
+    {
+      "label": "ready/状态页",
+      "violations": []
+    },
+    {
+      "label": "ready/控制台",
+      "violations": []
+    },
+    {
+      "label": "dark/状态页",
+      "violations": []
+    },
+    {
+      "label": "dark/控制台",
+      "violations": []
+    }
+  ],
+  "screenshots": [
+    "plans/证据/ui-audit-console-320.png",
+    "plans/证据/ui-audit-console.png",
+    "plans/证据/ui-dark-console.png",
+    "plans/证据/ui-dark-statuspage.png",
+    "plans/证据/ui-degraded-statuspage.png",
+    "plans/证据/ui-invalid-token-console.png",
+    "plans/证据/ui-invalid-token-statuspage.png",
+    "plans/证据/ui-notoken-statuspage.png",
+    "plans/证据/ui-ready-console-320.png",
+    "plans/证据/ui-ready-console-360.png",
+    "plans/证据/ui-ready-console.png",
+    "plans/证据/ui-ready-statuspage-320.png",
+    "plans/证据/ui-ready-statuspage-360.png",
+    "plans/证据/ui-ready-statuspage.png",
+    "plans/证据/ui-stale-statuspage.png",
+    "plans/证据/ui-wedged-console.png",
+    "plans/证据/ui-wedged-statuspage.png"
+  ]
+}

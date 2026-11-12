@@ -74,6 +74,11 @@ class Prewarmer(threading.Thread):
         super().__init__(name="cfsolve-prewarm", daemon=True)
         self._solver = solver
         self._renew_before = max(30.0, renew_before)
+        # TTL 比续期窗口还短时，`remaining > renew_before` 永远不成立 → 每轮都会重解。
+        # 把窗口压到 TTL 的一半，至少保证"刚续过就跳过"。
+        ttl = float(getattr(solver, "ttl", 0) or 0)
+        if ttl > 0 and ttl <= self._renew_before:
+            self._renew_before = max(0.5, ttl / 2)
         self._interval = max(5.0, interval)
         self._jitter = max(0.0, jitter)
         self._max_failures = max(1, max_failures)
@@ -130,11 +135,41 @@ class Prewarmer(threading.Thread):
                 if self._stop_event.is_set():
                     return
 
+            # force=True 会跳过 Solver.solve 内部的 claim；续期前在这里自己抢一次，
+            # 避免 4 个 worker 同时续同一个域（等于 4 次冷解）。
+            claim = getattr(self._solver, "claim_solve", None)
             try:
-                self._solver.solve(host.url, timeout=self._solve_timeout)
-            except Exception as e:  # noqa: BLE001
+                claimed = (bool(claim(host.url, self._solve_timeout, want="clearance"))
+                           if callable(claim) else True)
+            except Exception as e:  # noqa: BLE001 —— 单域 claim 故障不能杀保活线程
                 self._record_failure(host, e)
                 continue
+            if not claimed:
+                with self._lock:
+                    self.stats.skipped += 1
+                host.next_attempt_at = time.time() + min(30.0, max(5.0, self._renew_before / 2))
+                continue
+            try:
+                # force=True 是保活的命门：不带它时 Solver.solve 会先查缓存，
+                # 只要旧凭证还没过期就直接返回 —— 续期变成"命中缓存"，expires_at 不变，
+                # 等到真正过期才重解，稳态就会出现冷解窗口。
+                self._solver.solve(host.url, timeout=self._solve_timeout, force=True)
+            except Exception as e:  # noqa: BLE001
+                raw_code = getattr(e, "code", "")
+                code = str(getattr(raw_code, "value", raw_code) or "")
+                if code in ("rate-limited", "busy"):
+                    # 准入拒绝不是"这个域坏了"：短延迟重试，不累计 failures。
+                    with self._lock:
+                        self.stats.skipped += 1
+                        self.stats.last_error = f"{host.url}: {code}（延迟重试）"
+                    host.next_attempt_at = time.time() + 30.0
+                else:
+                    self._record_failure(host, e)
+                continue
+            finally:
+                release = getattr(self._solver, "release_claim_for", None)
+                if claimed and callable(release):
+                    release(host.url, want="clearance")
             self._record_success(host)
 
     def _record_success(self, host: HostState) -> None:

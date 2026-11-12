@@ -1,3 +1,31 @@
+## [Unreleased] - 2026-11-11
+
+主题：**修复 P0/P1 + 参考对标落地（B0–B15）**。详细状态与证据见 `参考的结果计划指南.md` 与 `evidence/R-*.json`。
+
+### 修复
+- P0：Go 客户端 `/solve` 误用 5s 探活 client（冷求解必超时）→ 改用 240s `hc`，补慢 solver 用例。
+- P1：prewarm 不传 `force=True`（续期只命中缓存）→ 真续期；多 worker 首启 token 竞态 → `.env.lock` 锁 + 二次重读；缓存键缺 `want`（awswaf 拿到 clearance）→ 键含 want。
+- P1：`run.py smoke` 默认鉴权必红 + SSRF 断言假阳性 → 默认读 `.env` token；断言 400+`invalid-request`；`verify` 纳入 smoke。
+- P1（合规）：Antibot-Detector 上游是 NPOSL-3.0（不是 MIT）→ `detect` 自有整理、生成器只对照、`NOTICE` 记录；captcha-solver 来源与许可状态入 `NOTICE`。
+- P2：OpenAPI stage/route/响应字段补齐；Go `ErrNoChallenge` / `no_challenge`；FlareSolverr 拒绝非 clearance；`--proxy`+`--flaresolverr` 硬冲突；DataDome cookie 映射；`timeout_s` 夹取；非 ASCII Bearer 不再 traceback；缓存 IO 失败不再 500；看门狗覆盖重启挂起；probe 慢滴有界读；`--ttl` 传给全部后端；URL 通配信号；F5 检测；路由 BUSY 计数；shutdown 排队 503；压测错误率进口径；按域令牌桶（默认 1/30）；Shape 动态头/seed 与 Akamai 脚本标记按公开观测补齐。
+- 文档：`项目规格` 升 v6.4.3；`对接-new-api` 按上游实测校正；`检测` 计数/来源更正；站点数字同步。
+
+### 新增
+- MCP stdio 适配器：`solver/client.py` + `solver/mcp_server.py`（5 工具），`python run.py mcp`；见 `docs/MCP.md`。
+
+### 验证
+- Python 1117 passed / 8 skipped（1127 收集），solver 89.78%，68 模块门禁全过；Go 57 Test + vet + race。
+- `e2e_local` 40/40（26.1s）、`verify_ui_e2e` 35/35、`hot_update_drill` 17/17、smoke PASS、hot 5796 QPS/p99 2.81ms/0 错。
+- 门禁：validate-docs 13 处、openapi 14 操作、findings 54、gates.selftest 24/24、hygiene 干净。
+
+### 真机
+- R-1 机械链路 PASS（本地 Chromium + `CLOAKBROWSER_BINARY_PATH`，Turnstile 测试 key 7.3s；stealth 未验证）。
+- R-2 CLOSED（udemy 6.03s/330B/egress_id/回放 200/审计）。
+- R-3 BLOCKED（两次失败，累计失败 5/5，按纪律全停）。
+
+### 未做
+- R-3 stage2、P3-04…16、站点 build/e2e/Lighthouse、new-api 实机、官方 cloakbrowser stealth 真机；未提交、未推送。
+
 ## [6.4.3] - 2026-11-11
 
 主题：**全量验收复核**。本轮不改产品代码，把 2026-11-11 的全量验收结果固化为可复核的证据与基线。

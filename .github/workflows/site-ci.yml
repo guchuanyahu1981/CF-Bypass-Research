@@ -4,10 +4,14 @@ on:
   push:
     paths:
       - 'site/**'
+      # 站点 content 测试直接读 docs/facts.json；只改事实源的版本发布也必须触发，
+      # 否则 /changelog 与 tests.python 会再次漂移（v6.4.1 → v6.4.2 就是这么红的）。
+      - 'docs/facts.json'
       - '.github/workflows/site-ci.yml'
   pull_request:
     paths:
       - 'site/**'
+      - 'docs/facts.json'
 
 permissions:
   contents: read
@@ -77,6 +81,13 @@ jobs:
           export CHROME_PATH=$(node -e "console.log(require('@playwright/test').chromium.executablePath())")
           npx lhci autorun
 
+      - name: Lighthouse (mobile, 记录基线)
+        # 移动端性能受 runner 负载影响更大，性能项留 warn（不阻断），
+        # 但 a11y/best-practices/SEO 仍是 error —— 这三类不该因设备而漂。
+        run: |
+          export CHROME_PATH=$(node -e "console.log(require('@playwright/test').chromium.executablePath())")
+          npm run lighthouse:mobile
+
       - name: Upload evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -85,4 +96,5 @@ jobs:
           path: |
             plans/证据/ui-v1/site-verify.json
             site/.lighthouseci/*.report.json
+            site/.lighthouseci-mobile/*.report.json
           if-no-files-found: ignore

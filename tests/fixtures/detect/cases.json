@@ -15,11 +15,22 @@
       "why": "CF 用 cf-mitigated 头标记 managed challenge，必须判成需浏览器",
       "input": {
         "status": 403,
-        "headers": { "cf-mitigated": "challenge" },
+        "headers": {
+          "cf-mitigated": "challenge"
+        },
         "body": "",
         "url": "https://x.test/"
       },
-      "expect": { "detections": [["detect-cloudflare", 100]], "ctype": "managed", "route": "browser" }
+      "expect": {
+        "detections": [
+          [
+            "detect-cloudflare",
+            100
+          ]
+        ],
+        "ctype": "managed",
+        "route": "browser"
+      }
     },
     {
       "name": "cf-jsd-ctype",
@@ -30,18 +41,36 @@
         "body": "<script>window._cf_chl_opt={cType: 'jsd', cvId: '3'};</script>",
         "url": "https://x.test/"
       },
-      "expect": { "detections": [["detect-cloudflare", 95]], "ctype": "jsd", "route": "pure_protocol_may_work" }
+      "expect": {
+        "detections": [
+          [
+            "detect-cloudflare",
+            95
+          ]
+        ],
+        "ctype": "jsd",
+        "route": "pure_protocol_may_work"
+      }
     },
     {
       "name": "cf-turnstile-widget",
-      "why": "Turnstile 要的是 token 不是 cf_clearance，路由必须分叉到 browser_token",
+      "why": "Turnstile 要的是 token 不是 cf_clearance，路由必须分叉到 browser_token（v6.4.1：url 规则不再匹配 body，置信度按 text 信号 85 计算）",
       "input": {
         "status": 403,
         "headers": {},
         "body": "<script src=\"https://challenges.cloudflare.com/turnstile/v0/api.js\"></script>",
         "url": "https://x.test/"
       },
-      "expect": { "detections": [["detect-cloudflare", 100]], "ctype": "turnstile", "route": "browser_token" }
+      "expect": {
+        "detections": [
+          [
+            "detect-cloudflare",
+            85
+          ]
+        ],
+        "ctype": "turnstile",
+        "route": "browser_token"
+      }
     },
     {
       "name": "cf-no-challenge-markers",
@@ -51,9 +80,20 @@
         "headers": {},
         "body": "<html>hello</html>",
         "url": "https://x.test/",
-        "cookies": { "__cf_bm": "abc" }
+        "cookies": {
+          "__cf_bm": "abc"
+        }
       },
-      "expect": { "detections": [["detect-cloudflare", 50]], "ctype": "", "route": "direct_unless_blocked" }
+      "expect": {
+        "detections": [
+          [
+            "detect-cloudflare",
+            50
+          ]
+        ],
+        "ctype": "",
+        "route": "direct_unless_blocked"
+      }
     },
     {
       "name": "cf-challenge-platform-url",
@@ -64,7 +104,11 @@
         "body": "",
         "url": "https://x.test/cdn-cgi/challenge-platform/h/b/orchestrate/jsch/v1"
       },
-      "expect": { "detections": [], "ctype": "managed", "route": "browser" }
+      "expect": {
+        "detections": [],
+        "ctype": "managed",
+        "route": "browser"
+      }
     },
     {
       "name": "akamai-abck",
@@ -74,9 +118,20 @@
         "headers": {},
         "body": "",
         "url": "https://x.test/",
-        "cookies": { "_abck": "ABC~-1~YAAQ" }
+        "cookies": {
+          "_abck": "ABC~-1~YAAQ"
+        }
       },
-      "expect": { "detections": [["detect-akamai", 100]], "ctype": "", "route": "multicaptcha" }
+      "expect": {
+        "detections": [
+          [
+            "detect-akamai",
+            100
+          ]
+        ],
+        "ctype": "",
+        "route": "multicaptcha"
+      }
     },
     {
       "name": "aws-waf-token",
@@ -86,9 +141,20 @@
         "headers": {},
         "body": "",
         "url": "https://x.test/",
-        "cookies": { "aws-waf-token": "eyJ0eXAi" }
+        "cookies": {
+          "aws-waf-token": "eyJ0eXAi"
+        }
       },
-      "expect": { "detections": [["detect-aws-waf", 100]], "ctype": "", "route": "browser_cookie" }
+      "expect": {
+        "detections": [
+          [
+            "detect-aws-waf",
+            100
+          ]
+        ],
+        "ctype": "",
+        "route": "browser_cookie"
+      }
     },
     {
       "name": "datadome-cookie",
@@ -98,9 +164,20 @@
         "headers": {},
         "body": "",
         "url": "https://x.test/",
-        "cookies": { "datadome": "AbC~dEf" }
+        "cookies": {
+          "datadome": "AbC~dEf"
+        }
       },
-      "expect": { "detections": [["detect-datadome", 100]], "ctype": "", "route": "multicaptcha" }
+      "expect": {
+        "detections": [
+          [
+            "detect-datadome",
+            100
+          ]
+        ],
+        "ctype": "",
+        "route": "multicaptcha"
+      }
     },
     {
       "name": "clean-site",
@@ -111,7 +188,11 @@
         "body": "<html>nothing special</html>",
         "url": "https://x.test/"
       },
-      "expect": { "detections": [], "ctype": "", "route": "direct" }
+      "expect": {
+        "detections": [],
+        "ctype": "",
+        "route": "direct"
+      }
     }
   ]
 }

@@ -3,8 +3,8 @@
 """CF-Bypass-Research 跨平台统一入口（v5.1 T-80）。
 
 与 run.ps1 的子命令一一对应；run.ps1 内部转发到这里，两套逻辑不再漂移。
-仅用 stdlib；verify 按 run.ps1 的既有顺序 fail-fast：pytest → compileall →
-go → findings → e2e → repo hygiene → research doctor → service-report(v6.2 golden)。
+仅用 stdlib；verify 按 run.ps1 的既有顺序 fail-fast：pytest → 覆盖率 → compileall →
+go → findings → e2e → smoke → repo hygiene → research doctor → service-report(v6.2 golden)。
 
 四类验收（v6.2 起全部可复跑，不再是人工一次性快照）：
     python run.py ui          # UI 截图验收：真 Chrome 跑 5 种状态 + 按钮交互，截图落 plans/证据/
@@ -20,18 +20,21 @@ go → findings → e2e → repo hygiene → research doctor → service-report(
     python run.py realcalls | report [--write]
     python run.py egress --proxy URL [--proxy URL ...] [--proxy-egress-ip URL=IP ...]
                     [--egress-echo-url URL]          # 唯一会出站的子命令
+    python run.py mcp        # MCP stdio 适配器（5 工具；CF_SOLVE_URL 指向服务）
 """
 import argparse
+import json
 import os
 import re
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
 import time
 from pathlib import Path
 from urllib import request as urlreq
-from urllib.error import URLError
+from urllib.error import HTTPError, URLError
 
 ROOT = Path(__file__).resolve().parent
 
@@ -56,8 +59,11 @@ COMMANDS = {
     'verify': None,
     'ui': None,
     'realcalls': None,
+    'accept': None,
+    'review': None,
     'report': None,
     'egress': None,
+    'mcp': None,
     'help': None,
 }
 
@@ -165,6 +171,21 @@ def cmd_bench(a):
     return next((rc for rc in rcs if rc), 0)
 
 
+def _free_port() -> int:
+    """给 verify 里的 smoke 挑一个空闲回环端口（避免撞上已在跑的服务）。"""
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return int(s.getsockname()[1])
+
+
+def _smoke_get(url: str, token: str, timeout: float = 20.0) -> tuple[int, dict]:
+    req = urlreq.Request(url)
+    if token:
+        req.add_header("Authorization", f"Bearer {token}")
+    with urlreq.urlopen(req, timeout=timeout) as resp:
+        return int(resp.status), json.loads(resp.read())
+
+
 def cmd_smoke(a):
     step(f"起服务并做冒烟（port={a.port}）")
     cache_dir = Path(tempfile.mkdtemp(prefix="cfsolve-smoke-"))
@@ -180,7 +201,6 @@ def cmd_smoke(a):
         while time.monotonic() < deadline:
             try:
                 with urlreq.urlopen(f"{base}/health", timeout=3) as r:
-                    import json
                     ready = json.loads(r.read())
                 if ready.get("state") == "ready":
                     break
@@ -193,20 +213,38 @@ def cmd_smoke(a):
         print(f"OK  /health ready（browser={ready.get('browser')}, "
               f"cache={ready.get('cache_backend')}）")
 
-        with urlreq.urlopen(f"{base}/detect?url=https://example.com/", timeout=20) as r:
-            import json
-            d = json.loads(r.read())
+        token = "" if a.no_auth else (read_env_token() or "")
+        try:
+            _, d = _smoke_get(f"{base}/detect?url=https://example.com/", token)
+        except HTTPError as e:
+            print(f"FAIL: /detect 返回 HTTP {e.code}。默认配置需要 Bearer："
+                  "检查 .env 的 CF_SOLVE_TOKEN，或显式加 --no-auth 调试。", file=sys.stderr)
+            return 1
         print(f"OK  /detect example.com → protected={d.get('protected')} "
               f"route={d.get('recommendation', {}).get('route')}")
 
+        # SSRF 守卫：必须拿到 **400 + error_code=invalid-request**。
+        # 不能把任何 URLError（401/连接失败）都当成“守卫生效”——那是假阳性。
         try:
-            urlreq.urlopen(f"{base}/detect?url=http://127.0.0.1:{a.port}/health",
-                           timeout=10)
-            print("FAIL: SSRF 守卫失效：内网 URL 没有被拒绝", file=sys.stderr)
+            status, body = _smoke_get(
+                f"{base}/detect?url=http://127.0.0.1:{a.port}/health", token, timeout=10)
+            print(f"FAIL: SSRF 守卫没有拒绝内网 URL（HTTP {status}）", file=sys.stderr)
             return 1
-        except (URLError, OSError):
-            pass
-        print("OK  SSRF 守卫拦住了内网 URL")
+        except HTTPError as e:
+            if e.code != 400:
+                print(f"FAIL: SSRF 守卫应返回 400 invalid-request，实际 {e.code}", file=sys.stderr)
+                return 1
+            try:
+                body = json.loads(e.read().decode("utf-8", "replace"))
+            except Exception:  # noqa: BLE001
+                body = {}
+            if body.get("error_code") != "invalid-request":
+                print(f"FAIL: SSRF 拒绝缺少 error_code=invalid-request: {body}", file=sys.stderr)
+                return 1
+            print("OK  SSRF 守卫拦住了内网 URL（400 invalid-request）")
+        except (URLError, OSError) as e:
+            print(f"FAIL: SSRF 检查请求失败（{e}）——连接失败不等于守卫生效", file=sys.stderr)
+            return 1
         return 0
     finally:
         proc.kill()
@@ -307,7 +345,24 @@ def cmd_verify(a):
         return run([sys.executable, "-m", "compileall", "-q", "solver", "scripts", "tests", "captchas"])
 
     def coverage_gate():
-        return run(["node", "scripts", "check-coverage.mjs", "--coverage-json=coverage.json"])
+        # --fast 模式没产出 coverage.json；拿旧文件判门禁是假信号。
+        if getattr(a, "fast", False):
+            print("SKIP: --fast 模式没有覆盖率产物，跳过逐模块门禁")
+            return 0
+        return run(["node", "scripts/check-coverage.mjs", "--coverage-json=coverage.json"])
+
+    def validate_docs():
+        # 与 CI 对齐：本地 verify 全绿不能掩盖文档数字/版本漂移。
+        if getattr(a, "fast", False):
+            print("SKIP: --fast 模式不跑文档数字校验（没有完整覆盖率）")
+            return 0
+        return run(["node", "scripts/validate-docs.mjs", "--coverage-json=coverage.json"])
+
+    def validate_openapi():
+        return run(["node", "scripts/validate-openapi.mjs"])
+
+    def gates_selftest():
+        return run(["node", "scripts/gates.selftest.mjs"])
 
     def go():
         return cmd_go(a)
@@ -350,13 +405,26 @@ def cmd_verify(a):
             return 1
         return run([sys.executable, "scripts/research.py", "doctor"])
 
+    def smoke():
+        # 提交前验收必须包含"真进程冒烟"：/health → /detect → SSRF 400。
+        # 这一步默认需要 Bearer（smoke 自己从 .env 读），不再要求调用方记得加 --no-auth。
+        # 注意：smoke 会出网探测 example.com；离线环境必须显式 --skip-smoke（记 SKIP，不冒充通过）。
+        if getattr(a, "skip_smoke", False):
+            print("SKIP: --skip-smoke（离线环境；smoke 需要出网）", file=sys.stderr)
+            return 0
+        return cmd_smoke(argparse.Namespace(port=_free_port(), no_auth=False))
+
     rc = run_steps([
         ("pytest", py),
         ("coverage-gate", coverage_gate),
+        ("validate-docs", validate_docs),
+        ("validate-openapi", validate_openapi),
+        ("gates-selftest", gates_selftest),
         ("compileall", compileall),
         ("go vet/test", go),
         ("findings", findings),
         ("e2e", e2e),
+        ("smoke", smoke),
         ("repo-hygiene(T-69)", hygiene),
         ("research-doctor(T-67)", research_doctor),
         ("service-report(golden)", service_report),
@@ -367,18 +435,162 @@ def cmd_verify(a):
 
 
 def cmd_ui(a):
-    """UI 验收：真 Chrome 跑 6 种状态 + 按钮交互 + 截图（v6.3）。
-
-    为什么单独一个命令而不是塞进 verify：它需要 Playwright 的 Chromium，
-    而 CI 按规定不下载浏览器（policy §2：全程离线）。本地跑，把截图落 plans/证据/。
-    """
-    return run([sys.executable, str(ROOT / "scripts" / "verify_ui_e2e.py")]
-               + (["--only", a.value] if getattr(a, "value", "") else []))
+    """UI 验收：真 Chrome 跑状态矩阵 + 按钮交互 + 截图 + axe（v6.3）。"""
+    args = [sys.executable, str(ROOT / "scripts" / "verify_ui_e2e.py")]
+    if getattr(a, "value", ""):
+        args += ["--only", a.value]
+    args += ["--json-out", getattr(a, "json_out", "") or "evidence/ui-acceptance.json"]
+    return run(args)
 
 
 def cmd_realcalls(a):
     """真实调用验收：真进程 + 真 token，全端点 × 鉴权两态（v6.2 脚本化）。"""
-    return run([sys.executable, str(ROOT / "scripts" / "verify_real_calls.py")])
+    out = getattr(a, "json_out", "") or "evidence/realcalls.json"
+    return run([sys.executable, str(ROOT / "scripts" / "verify_real_calls.py"),
+                "--json-out", out])
+
+
+def cmd_review(a):
+    """独立代码复审：按领域拆成三份 claude -p 复审，再汇总成一个 VERDICT。
+
+    为什么不一次喂全量 diff：全量 ~700KB，单次 claude 复审会超时；拆成
+    solver / runtime / tests 三份，每份都能在超时内给出可读完的结论。
+    """
+    script = ROOT / "scripts" / "review_diff.py"
+    if not script.exists():
+        print("FAIL: scripts/review_diff.py 不存在（四类验收的代码复审轨道缺失）。",
+              file=sys.stderr)
+        return 1
+    base = Path(getattr(a, "out", "") or "evidence/code-review.md")
+    if not base.is_absolute():
+        base = ROOT / base
+    areas = [
+        ("service", ["solver/service.py"]),
+        ("ui", ["solver/statuspage.py", "solver/console_html.py",
+                "solver/ui_tokens.py", "solver/_page_common.py"]),
+        ("core-detect", ["solver/detect.py"]),
+        ("core-mcp", ["solver/client.py", "solver/mcp_server.py", "solver/ratelimit.py"]),
+        ("core-runtime", ["solver/prewarm.py", "solver/auth.py", "solver/bootstrap.py",
+                          "solver/backends.py", "solver/errors.py"]),
+        ("runtime", ["gocfsolve/cfsolve.go", "gocfsolve/pool.go",
+                     "gocfsolve/cfsolve_test.go", "gocfsolve/pool_test.go",
+                     "run.py", ".github", "site"]),
+        ("scripts", ["scripts"]),
+        ("tests-core", ["tests/test_service.py", "tests/test_governance.py",
+                        "tests/test_ratelimit.py", "tests/test_cache.py",
+                        "tests/test_cache_sqlite.py", "tests/test_watchdog.py",
+                        "tests/test_auth_probe_gaps.py", "tests/test_auth_token_race.py",
+                        "tests/test_auth_matrix.py", "tests/test_mcp_server.py"]),
+        ("tests-a", ["tests/test_acceptance_v41.py", "tests/test_observability.py",
+                     "tests/test_detect.py", "tests/test_detect_golden.py",
+                     "tests/test_detect_source.py", "tests/test_route.py",
+                     "tests/test_runpy.py", "tests/test_acceptance_report.py"]),
+        ("tests-b", ["tests/test_backends.py", "tests/test_bootstrap.py",
+                     "tests/test_compat.py", "tests/test_multicaptcha.py",
+                     "tests/test_prewarm.py", "tests/test_captcha_pure.py",
+                     "tests/test_captchas_offline.py", "tests/test_record_traffic.py",
+                     "tests/test_strategies.py", "tests/test_properties.py"]),
+    ]
+    reports = []
+    for name, paths in areas:
+        out = base.with_name(f"{base.stem}-{name}{base.suffix}")
+        rc = run([sys.executable, str(script), "--paths", *paths, "--out", str(out)])
+        if rc:
+            return rc
+        reports.append((name, out))
+    verdicts = []
+    for name, out in reports:
+        try:
+            text = out.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            text = ""
+        all_v = re.findall(r"VERDICT:\s*(PASS|FAIL)", text, re.I)
+        verdicts.append((name, all_v[-1].upper() if all_v else "UNKNOWN", out))
+    overall = "PASS" if all(v == "PASS" for _, v, _ in verdicts) else "FAIL"
+    lines = ["# 独立代码复审汇总", "",
+             "| 领域 | 结论 | 详细报告 |", "|---|---|---|"]
+    for name, verdict, out in verdicts:
+        try:
+            shown = out.relative_to(ROOT).as_posix()
+        except ValueError:
+            shown = out.as_posix()
+        lines.append(f"| {name} | {verdict} | `{shown}` |")
+    lines += ["", f"VERDICT: {overall}", ""]
+    base.parent.mkdir(parents=True, exist_ok=True)
+    base.write_text("\n".join(lines), encoding="utf-8")
+    print(f"review aggregate: {base} -> {overall}")
+    return 0 if overall == "PASS" else 1
+
+
+def cmd_accept(a):
+    """四类验收编排：verify → UI 截图 → 真实调用 → 真实 E2E → 代码复审 → 汇总。"""
+    step("accept: 四类验收编排")
+    verify_args = argparse.Namespace(
+        port=a.port, no_auth=False, skip_browser=a.skip_browser,
+        skip_smoke=a.skip_smoke, fast=getattr(a, "fast", False),
+    )
+    report_args = argparse.Namespace(write=False)
+
+    def verify():
+        return cmd_verify(verify_args)
+
+    def ui():
+        # UI 验收必须真浏览器；--skip-browser 与它互斥。冲突时写 SKIP 标记并继续
+        # 其余轨道 —— acceptance_report 会把 overall 判为 partial，不中断整条验收。
+        if a.skip_browser:
+            marker = ROOT / "evidence" / "ui-acceptance-SKIPPED.json"
+            marker.write_text(json.dumps({
+                "schema_version": 1, "skipped": True,
+                "reason": "accept --skip-browser：UI 截图验收必须真浏览器",
+            }, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            print("SKIP: --skip-browser 与 UI 验收冲突；已写 ui-acceptance-SKIPPED.json，"
+                  "汇总将标 partial")
+            return 0
+        return run([sys.executable, str(ROOT / "scripts" / "verify_ui_e2e.py"),
+                    "--json-out", "evidence/ui-acceptance.json"])
+
+    def realcalls():
+        return cmd_realcalls(argparse.Namespace(json_out="evidence/realcalls.json"))
+
+    def e2e():
+        return cmd_e2e(a)
+
+    def report():
+        return cmd_report(report_args)
+
+    def review():
+        if getattr(a, "skip_review", False):
+            marker = ROOT / "evidence" / "code-review-SKIPPED.md"
+            marker.write_text(
+                "# 独立代码复审\n\n"
+                "- skipped: true\n"
+                "- reason: accept --skip-review\n\n"
+                "本文件表示本轮验收**没有跑**代码复审轨道。\n"
+                "acceptance_report 会据此把 overall 判为 partial，不会复用旧 PASS。\n",
+                encoding="utf-8")
+            print("SKIP: --skip-review（已写 code-review-SKIPPED.md；汇总会标 partial）")
+            return 0
+        return cmd_review(argparse.Namespace(out="evidence/code-review.md"))
+
+    rc = run_steps([
+        ("verify", verify),
+        ("ui-acceptance", ui),
+        ("realcalls", realcalls),
+        ("e2e", e2e),
+        ("service-report", report),
+        ("code-review", review),
+    ])
+    if rc:
+        return rc
+    return run([sys.executable, str(ROOT / "scripts" / "acceptance_report.py"),
+                "--ui", "evidence/ui-acceptance.json",
+                "--realcalls", "evidence/realcalls.json",
+                "--e2e", "evidence/e2e-local.json",
+                "--review", ("evidence/code-review-SKIPPED.md"
+                             if getattr(a, "skip_review", False)
+                             else "evidence/code-review.md"),
+                "--ui-skipped", str(bool(a.skip_browser)),
+                "--out", "evidence/acceptance.json"])
 
 
 def cmd_report(a):
@@ -404,6 +616,14 @@ def cmd_egress(a):
     return run(cmd)
 
 
+def cmd_mcp(a):
+    """MCP stdio 适配器：stdout 是协议通道，不能混任何日志/提示。
+
+    不能用 `run()`：它会先 `print("+ ...")` 到 stdout，直接破坏 MCP 握手。
+    """
+    return subprocess.call([sys.executable, "-m", "solver.mcp_server"], cwd=str(ROOT))
+
+
 def cmd_help(a):
     print(__doc__)
     return 0
@@ -422,13 +642,26 @@ def build_parser():
     common.add_argument("--port", type=int, default=8878)
     common.add_argument("--no-auth", action="store_true", help="鉴权关闭（smoke/start）")
     common.add_argument("--skip-browser", action="store_true", help="e2e 跳过真浏览器")
+    common.add_argument("--skip-smoke", action="store_true",
+                        help="verify 跳过 smoke（离线/隔离环境；smoke 需要出网探测 example.com）")
     common.add_argument("--fast", action="store_true",
                         help="verify 只跑定向测试不做覆盖率（T-80 验证用）")
     for name in COMMANDS:
         sp = sub.add_parser(name, parents=[common])
         if name == "ui":
             sp.add_argument("--only", dest="value", default="",
-                            help="只跑某个状态：ready/wedged/degraded/no-token/unreachable")
+                            help="只跑某个状态：ready/wedged/degraded/no-token/invalid-token/audit/stale/dark/unreachable")
+            sp.add_argument("--json-out", default="evidence/ui-acceptance.json",
+                            help="验收结果 JSON（证据）")
+        if name == "realcalls":
+            sp.add_argument("--json-out", default="evidence/realcalls.json",
+                            help="验收结果 JSON（证据）")
+        if name == "accept":
+            sp.add_argument("--skip-review", action="store_true",
+                            help="跳过独立代码复审（汇总会标 partial，不作为完整验收）")
+        if name == "review":
+            sp.add_argument("--out", default="evidence/code-review.md",
+                            help="复审报告落盘路径")
         if name == "report":
             sp.add_argument("--write", action="store_true", help="重新生成 golden")
         if name == "egress":

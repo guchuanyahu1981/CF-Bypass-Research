@@ -45,6 +45,7 @@ class CfsolveBackend:
         timeout: float = 120.0,
         extra_args: list[str] | None = None,
         egress_id: str = "cfsolve",
+        default_ttl: int = DEFAULT_COOKIE_TTL,
     ) -> None:
         self.binary = binary
         self.profile = profile
@@ -54,6 +55,8 @@ class CfsolveBackend:
         # 出口标识：必须与**本进程实际出口**一致（而不是写死 "cfsolve"）。
         # 它参与缓存键，也是 Go 侧选代理的依据；编一个假的会让出口校验失效。
         self.egress_id = egress_id or "cfsolve"
+        # `--ttl` 是全局缓存上限；此前只有 camoufox 走了它，cfsolve 仍按 1500s 缓存。
+        self.default_ttl = max(1, int(default_ttl))
         self._ua_cache: str | None = None
 
     def name(self) -> str:
@@ -83,6 +86,13 @@ class CfsolveBackend:
         action = str(kwargs.get("action") or "")
         cdata = str(kwargs.get("cdata") or "")
 
+        if want not in ("clearance", "turnstile", "recaptcha_v3"):
+            raise SolveError(
+                ErrorCode.NOT_CONFIGURED,
+                f"cfsolve 不支持 want={want}（只产出 clearance/turnstile/recaptcha_v3）",
+                stage="admit",
+                hint="awswaf 请用 pydoll/Camoufox 后端；不要把 clearance 当成 awswaf 返回",
+            )
         if not self.is_configured():
             raise SolveError(
                 ErrorCode.NOT_CONFIGURED,
@@ -153,7 +163,8 @@ class CfsolveBackend:
             # cfsolve 只在 stdout 打印 token，不告诉我们 cookie 的真正到期时间 ⇒ 用名义值。
             # 但**绝不能返回 0**：0 会让 Go 侧 `expiresAt()` 立刻判过期、服务端缓存也直接删，
             # 等于把整套缓存关掉 —— 每次回放都要再付一次 18s 纯协议求解。
-            ttl = derive_ttl(cookie_list, "cf_clearance", default=DEFAULT_COOKIE_TTL)
+            ttl = derive_ttl(cookie_list, "cf_clearance", default=self.default_ttl,
+                             max_ttl=self.default_ttl)
             if ttl <= 0:
                 raise SolveError(
                     ErrorCode.UNSOLVED, "cfsolve 拿到的 cf_clearance 已过期，不返回", stage="wait",

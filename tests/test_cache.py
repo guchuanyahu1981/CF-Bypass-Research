@@ -188,3 +188,62 @@ def test_solver_uses_injected_store_and_reports_backend():
         assert store.get(s.cache_key("example.com")) is not None
     finally:
         s.close()
+
+
+# ── P3-01：错误分支与清理路径（不改变正常语义）────────
+
+
+def test_memory_store_delete_purge_and_items():
+    s = cache_mod.MemoryStore()
+    s.set("alive", entry())
+    s.set("dead", entry(ttl=-1))
+    assert len(s.items()) == 2
+    assert s.purge_expired() == 1
+    s.delete("alive")
+    s.delete("never-existed")
+    assert s.items() == []
+    assert s.purge_expired() == 0
+
+
+def test_filestore_list_and_safe_unlink_swallow_oserror(tmp_path, monkeypatch):
+    fs = cache_mod.FileStore(str(tmp_path), TOKEN)
+    fs.set("k", entry())
+
+    def boom(*_a, **_k):
+        raise OSError("denied")
+
+    monkeypatch.setattr(cache_mod.os, "listdir", boom)
+    assert fs._list_files() == []
+    monkeypatch.undo()
+
+    monkeypatch.setattr(cache_mod.os, "unlink", boom)
+    fs._safe_unlink(str(tmp_path / "whatever.bin"))   # 清理失败不许把调用方带崩
+
+
+def test_filestore_enforce_limit_skips_unstatable_file(tmp_path, monkeypatch):
+    fs = cache_mod.FileStore(str(tmp_path), TOKEN, max_files=10)
+    for i in range(3):
+        fs.set(f"k{i}", entry())
+    fs._max_files = 1
+    real_stat = os.stat
+    calls = {"n": 0}
+
+    def flaky_stat(path):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise OSError("gone")
+        return real_stat(path)
+
+    monkeypatch.setattr(cache_mod.os, "stat", flaky_stat)
+    fs._enforce_limit()          # 一个 stat 失败不能放弃其余淘汰
+    assert calls["n"] >= 2
+    assert len(fs._list_files()) <= 1, "淘汰必须真的把文件删到上限以内"
+
+
+def test_harden_dir_and_file_swallow_chmod_errors(tmp_path, monkeypatch):
+    def boom(*_a, **_k):
+        raise OSError("chmod unsupported")
+
+    monkeypatch.setattr(cache_mod.os, "chmod", boom)
+    cache_mod._harden_dir(str(tmp_path))
+    cache_mod._harden_file(str(tmp_path / "x.bin"))

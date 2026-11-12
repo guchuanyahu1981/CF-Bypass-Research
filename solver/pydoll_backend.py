@@ -78,6 +78,7 @@ class PydollBackend:
         wait: float = 45.0,
         keep_browser: bool = False,
         egress_id: str = "pydoll",
+        default_ttl: int = DEFAULT_COOKIE_TTL,
     ) -> None:
         self.chrome_path = find_chrome(chrome_path)
         self.headless = headless
@@ -85,6 +86,7 @@ class PydollBackend:
         self.keep_browser = keep_browser
         # 出口标识：pydoll 在自己的进程里直连（不走代理池），所以它必须是**本机出口**的标识
         self.egress_id = egress_id or "pydoll"
+        self.default_ttl = max(1, int(default_ttl))
 
     def name(self) -> str:
         return BackendId.PYDOLL.value
@@ -192,7 +194,8 @@ class PydollBackend:
 
         # 统一算 TTL（禁止各后端自己拍 0）：0 会让 Go 侧立刻判过期、服务端缓存直接删，
         # 等于把缓存整个关掉 —— 每次回放都要重新开一次 Chrome。
-        ttl = derive_ttl(cookie_list, want_cookie, default=DEFAULT_COOKIE_TTL)
+        ttl = derive_ttl(cookie_list, want_cookie, default=self.default_ttl,
+                         max_ttl=self.default_ttl)
         if ttl <= 0:
             raise SolveError(
                 ErrorCode.UNSOLVED,

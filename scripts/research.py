@@ -378,7 +378,7 @@ def cmd_build(cfsolve_upstream=None):
         if nasm and str(Path(nasm).parent) not in env.get("PATH", ""):
             env["PATH"] = env.get("PATH", "") + os.pathsep + str(Path(nasm).parent)
             injected["PATH+nasm"] = str(Path(nasm).parent)
-    proc = subprocess.run(args, cwd=upstream, env=env)
+    proc = subprocess.run(args, cwd=upstream, env=env, timeout=900)
     return {"returncode": proc.returncode, "command": args, "upstream": upstream,
             "env_injected": injected}
 
@@ -420,7 +420,8 @@ def cmd_stage2(corpus_id, cfsolve_upstream=None):
     """跑 stage2_snapshot，输出规范化 JSON（6 类分析 outcome/error 逐项）。"""
     upstream = resolve_upstream(cfsolve_upstream)
     proc = subprocess.run([str(_binary(upstream, "stage2_snapshot")), str(_session_dir(corpus_id))],
-                          capture_output=True, text=True, encoding="utf-8", errors="replace")
+                          capture_output=True, text=True, encoding="utf-8", errors="replace",
+                          timeout=180)
     if proc.returncode != 0:
         raise ResearchError(f"stage2_snapshot 失败: {proc.stderr}")
     return {"corpus_id": corpus_id, "snapshot": json.loads(proc.stdout)}
@@ -439,7 +440,8 @@ def cmd_vm(corpus_id, fixture=False, cfsolve_upstream=None):
     else:
         program = session / "response.decoded.txt"
         args = [str(exe), str(script), str(program) if program.exists() else "-"]
-    proc = subprocess.run(args, capture_output=True, text=True, encoding="utf-8", errors="replace")
+    proc = subprocess.run(args, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                          timeout=180)
     if proc.returncode != 0:
         raise ResearchError(f"vm_snapshot 失败: {proc.stderr}")
     return {"corpus_id": corpus_id, "fixture": fixture, "output": proc.stdout}

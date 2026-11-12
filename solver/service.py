@@ -73,6 +73,7 @@ try:  # 作为包导入（tests / 未来 solver 包）
         token_fingerprint,
     )
     from .errors import ErrorCode, SolveError
+    from .ratelimit import RateLimiter
     from .detect import summarize as detect_summarize
     from .cache import build_store
     from .proxypool import ProxyPool, parse_proxy_url
@@ -154,6 +155,7 @@ except ImportError:  # 直接以脚本运行：python solver/service.py
         token_fingerprint,
     )
     from errors import ErrorCode, SolveError  # type: ignore[no-redef]
+    from ratelimit import RateLimiter  # type: ignore[no-redef]
     from detect import summarize as detect_summarize  # type: ignore[no-redef]
     from cache import build_store  # type: ignore[no-redef]
     from proxypool import ProxyPool, parse_proxy_url  # type: ignore[no-redef]
@@ -279,6 +281,24 @@ SHUTDOWN_GRACE = 10.0
 # 杀错代价比重启整个 worker 更大；而 worker 本来就是单线程串行，重启成本 ≈ 一次冷启动。
 WEDGE_GRACE = 30.0          # 任务超预算后再等多久才判定卡死（给慢站的余量）
 WEDGE_EXIT_CODE = 75        # EX_TEMPFAIL：告诉 supervisor "这不是业务失败，重启我"
+def _wedge_reason(now: float, deadline: float, desc: str, launch_at: float,
+                  launch_grace: float) -> str:
+    """看门狗的纯判定：返回非空字符串 = 本次判定为卡死。
+
+    两个条件互相独立：
+      · 任务超期（worker 已接单但 budget 到期还没返回）；
+      · 启动/重启阶段超期（launch_at 未清零）。
+    旧实现给启动阶段加了 `not ever_alive` 前置，导致“首次成功 → 浏览器断开 → 重启挂起”
+    永远不进 wedged（_ever_alive 一旦置 True 就不再复位）。`launch_at` 在启动成功时会被清零，
+    所以只用它做条件不会误伤正常运行期。
+    """
+    if deadline and now > deadline:
+        return f"任务超期未返回（{desc}），worker 疑似卡死"
+    if launch_at and now - launch_at > launch_grace:
+        return f"浏览器启动/重启阶段超过 {launch_grace:.0f}s 仍未就绪"
+    return ""
+
+
 WEDGE_LAUNCH_GRACE = 300.0  # 浏览器启动阶段卡死（从未 alive）的判定阈值
 _WATCH_INTERVAL = 2.0       # 看门狗检查间隔（秒）
 _WEDGE_CONFIRM = 2          # 连续命中几次才判定（防单次误判/时间跳变）
@@ -354,6 +374,27 @@ def _host_of(url: str) -> str:
     """兼容旧名：实现已下沉到 `request.host_of`（v6.4 D2 —— 嫁接层旁路搬到
     `multicaptcha.handle_compat_bypass` 后，两边都要算 host，不能各复制一份）。"""
     return host_of(url)
+
+
+def _cache_usable(cached, want: str) -> bool:
+    """缓存条目是否可用：dict + 过期时间可转 float + want 匹配（防手工种子/半写坏行）。"""
+    if not isinstance(cached, dict):
+        return False
+    try:
+        expires = float(cached.get("expires_at", 0) or 0)
+    except (TypeError, ValueError):
+        return False
+    return (expires > _now()
+            and _norm_want(str(cached.get("want") or "clearance")) == _norm_want(want))
+
+
+def _norm_want(want: str) -> str:
+    """want 的规范形态：缓存键、缓存值比较、claim 键必须用同一个字符串。
+
+    过去 `cache_key` 用 `.lower()`，而 `cache_lookup` 拿原始 want 与缓存里的
+    `want` 比较；`want="AWSWAF"` 会得到“键命中但产物不匹配”的永久 miss。
+    """
+    return str(want or "clearance").strip().lower() or "clearance"
 
 
 #: 兼容旧名：实现已下沉到 `request.clamp_timeout`（v5.0.1 D1），此处保留别名，
@@ -442,6 +483,8 @@ class Solver:
         compat_max_pending: int = COMPAT_DEFAULT_MAX_PENDING,
         wedge_restart: bool = False,
         wedge_grace: float = WEDGE_GRACE,
+        rate_per_host: float = 0.0,
+        rate_burst: int = 2,
     ) -> None:
         self.ttl = max(MIN_TTL, int(ttl))
         self.egress_id = egress_id or "default"
@@ -503,6 +546,9 @@ class Solver:
         self._failures = 0
         self._timeouts = 0
         self._rejected_busy = 0
+        # 按域令牌桶：默认关（0）。只对冷求解计数，缓存命中不经过它。
+        self._rate_limiter = (RateLimiter(rate_per_host, rate_burst)
+                              if rate_per_host > 0 else None)
         # 按后端的成功/失败计数（`cfsolve_backend_total{backend,result}`）。
         # 为什么单列：`solves_total` 原来的 HELP 写"含失败"但实现只数成功，
         # 而 router 路径连成功都不数 —— 两处口径都对不上，运维没法定位"哪个后端在退步"。
@@ -671,7 +717,8 @@ class Solver:
         判定口径（刻意保守，宁可晚判也不能误杀）：
           · 任务阶段：now > 该任务的 deadline（= budget + wedge_grace）持续 `_WEDGE_CONFIRM`
             秒仍在跑 → 判定卡死；
-          · 启动阶段：从未 alive 且启动已超过 WEDGE_LAUNCH_GRACE → 判定卡死
+          · 启动/重启阶段：launch_at 未清零且超过 WEDGE_LAUNCH_GRACE → 判定卡死
+    （不能用“从未 alive”做条件：首次成功后的重启挂起同样要抓）
             （Camoufox 首启要下载/解压，宽限给得很大）。
         为什么要"持续 N 秒"而不是一次命中：系统时间跳变/GC 长停顿都可能让单次检查
         看到超期。连续两次都超期才动手，能把误杀概率压到可忽略。
@@ -681,20 +728,12 @@ class Solver:
             if self._wedged:
                 continue
             now = time.monotonic()
-            overdue = False
-            reason = ""
             with self._lock:
                 deadline = self._task_deadline
                 desc = self._task_desc
                 launch_at = self._launch_started_at
-                ever_alive = self._ever_alive
-            if deadline and now > deadline:
-                overdue = True
-                reason = f"任务超期未返回（{desc}），worker 疑似卡死"
-            elif launch_at and not ever_alive and now - launch_at > WEDGE_LAUNCH_GRACE:
-                overdue = True
-                reason = f"浏览器启动阶段超过 {WEDGE_LAUNCH_GRACE:.0f}s 仍未就绪"
-            confirm = confirm + 1 if overdue else 0
+            reason = _wedge_reason(now, deadline, desc, launch_at, WEDGE_LAUNCH_GRACE)
+            confirm = confirm + 1 if reason else 0
             if confirm < _WEDGE_CONFIRM:
                 continue
             self._on_wedged(reason)
@@ -884,8 +923,6 @@ class Solver:
         非 http(s) 的跳转（`file:` / `gopher:` / `ftp:` …）一律拒绝：opener 里装着其它
         协议处理器，放行等于把协议面交出去。
         """
-        if self._allow_private_hosts:
-            return
         try:
             parts = urlsplit(url)
         except Exception as e:  # noqa: BLE001
@@ -904,6 +941,9 @@ class Solver:
             raise SolveError(
                 ErrorCode.INVALID_REQUEST, "重定向目标缺少主机名，已拒绝", stage="validate"
             )
+        # 联调开关只跳过**私网判定**，不跳过“只允许 http(s)”这条独立不变量。
+        if self._allow_private_hosts:
+            return
         if self._classify_host(host) == "blocked":
             raise SolveError(
                 ErrorCode.INVALID_REQUEST,
@@ -924,28 +964,31 @@ class Solver:
     # 归零 + 能被打穿 + 指标说一切正常"的组合。治理必须绑在**入口/路由**，不能绑在某个实现上。
 
     # -- 跨进程去重（同一域同时被多个 worker 抢到）-------
-    def claim_solve(self, url: str, budget: float) -> bool:
+    def claim_solve(self, url: str, budget: float, *, want: str) -> bool:
         """URL 级的跨进程抢占入口（供 Solver.solve 与 BackendRouter 共用）。"""
+        want = _norm_want(want)
         host = _host_of(url)
         if not host:
             return True
         entry = self._entry_for(host) if self._pool is not None else None
-        return self._claim(self.cache_key(host, entry), budget)
+        return self._claim(self.cache_key(host, entry, want), budget)
 
-    def wait_for_peer(self, url: str, budget: float) -> dict | None:
+    def wait_for_peer(self, url: str, budget: float, *, want: str) -> dict | None:
         """URL 级的"等对端填缓存"入口（同一条链路共用，避免两份实现漂移）。"""
+        want = _norm_want(want)
         host = _host_of(url)
         if not host:
             return None
         entry = self._entry_for(host) if self._pool is not None else None
-        return self._wait_for_peer(self.cache_key(host, entry), budget)
+        return self._wait_for_peer(self.cache_key(host, entry, want), budget, want)
 
-    def release_claim_for(self, url: str) -> None:
+    def release_claim_for(self, url: str, *, want: str) -> None:
+        want = _norm_want(want)
         host = _host_of(url)
         if not host:
             return
         entry = self._entry_for(host) if self._pool is not None else None
-        self._release_claim(self.cache_key(host, entry))
+        self._release_claim(self.cache_key(host, entry, want))
 
     def _claim(self, key: str, budget: float) -> bool:
         """抢占"我来解这个域"。没有抢占能力的存储（内存/文件）直接视为抢到。
@@ -969,7 +1012,8 @@ class Solver:
             except Exception:  # noqa: BLE001
                 pass
 
-    def _wait_for_peer(self, key: str, budget: float) -> dict | None:
+    def _wait_for_peer(self, key: str, budget: float,
+                       want: str = "clearance") -> dict | None:
         """没抢到时等对端把缓存填好（最多 ~10s 或预算的一半）。
 
         返回 None 表示"对端没能在预期时间内填好"——此时我们仍然自己去解：
@@ -981,7 +1025,7 @@ class Solver:
                 cached = self._store.get(key)
             except Exception:  # noqa: BLE001
                 cached = None
-            if cached and float(cached.get("expires_at", 0) or 0) > _now():
+            if _cache_usable(cached, want):
                 with self._lock:
                     self._hits += 1
                 hit = dict(cached)
@@ -990,8 +1034,9 @@ class Solver:
             time.sleep(0.1)
         return None
 
-    def cache_lookup(self, url: str) -> dict | None:
-        """按「域名+出口」查缓存，命中则返回可直接对外返回的 dict（含 cached=True）。"""
+    def cache_lookup(self, url: str, want: str = "clearance") -> dict | None:
+        """按「域名+出口+产物」查缓存，命中则返回可直接对外返回的 dict（含 cached=True）。"""
+        want = _norm_want(want)
         host = _host_of(url)
         if not host:
             return None
@@ -999,27 +1044,42 @@ class Solver:
         if self._pool is not None and entry is None:
             return None                      # 所有出口都在冷却：当作未命中，交给上层报 busy
         try:
-            cached = self._store.get(self.cache_key(host, entry))
+            cached = self._store.get(self.cache_key(host, entry, want))
         except Exception:  # noqa: BLE001 —— 缓存坏了不该打断求解
             return None
-        if not cached or float(cached.get("expires_at", 0) or 0) <= _now():
-            return None
+        if not _cache_usable(cached, want):
+            return None                       # 过期/坏行/产物不匹配都当未命中
         with self._lock:
             self._hits += 1
         hit = dict(cached)
         hit.update({"ok": True, "solved": True, "cached": True, "elapsed": 0.0})
         return hit
 
-    def remember(self, url: str, result: dict) -> None:
+    def remember(self, url: str, result: dict, want: str = "clearance") -> None:
         """把后端产出的凭证写进缓存（只在 TTL 有效时写；TTL=0 写进去等于每次重解）。"""
+        want = _norm_want(want)
+        try:
+            if Want.parse(want) not in CACHEABLE_WANTS:
+                return                       # 一次性 token 绝不进缓存
+        except ValueError:
+            return
         host = _host_of(url)
         if not host or not isinstance(result, dict):
             return
         if float(result.get("expires_at", 0) or 0) <= _now():
             return
         entry = self._entry_for(host) if self._pool is not None else None
+        result = {**result, "want": _norm_want(str(result.get("want") or want))}
+        result_want = _norm_want(str(result["want"]))
+        field = RESULT_FIELD.get(Want.parse(want))
+        if result_want != want or (field and not str(result.get(field) or "").strip()):
+            # cfsolve 等后端不拒绝 want；把 clearance 写进 awswaf 键会让 peer 路径
+            # 返回一个"solved:true 却没有 aws_waf_token"的错值。
+            self._note_error("cache_want_mismatch",
+                             f"{host}: result want={result_want} != key want={want}")
+            return
         try:
-            self._store.set(self.cache_key(host, entry), result, host=host,
+            self._store.set(self.cache_key(host, entry, want), result, host=host,
                             backend=str(result.get("backend") or ""))
         except Exception:  # noqa: BLE001
             pass
@@ -1027,6 +1087,31 @@ class Solver:
     def begin_backend_call(self) -> bool:
         """路由侧后端调用的准入门票；拿不到就立刻 429，不做无界排队。"""
         return self._inflight.acquire(blocking=False)
+
+    def abort_backend_call(self) -> None:
+        """归还门票但**不记账**：限流拒绝不是后端失败。"""
+        self._inflight.release()
+
+    def note_rejected_busy(self) -> None:
+        """路由侧准入拒绝也要计入 rejected_busy（否则 /metrics 低估背压）。"""
+        with self._lock:
+            self._rejected_busy += 1
+
+    def _check_rate(self, host: str) -> None:
+        if self._rate_limiter is not None and not self._rate_limiter.allow(host):
+            raise SolveError(
+                ErrorCode.RATE_LIMITED,
+                f"{host} 求解过于频繁（--rate-per-host={self._rate_limiter.rate:g}/s，"
+                f"burst={self._rate_limiter.burst}）",
+                stage="admit",
+                hint="等令牌恢复后重试；这是按域刹车，防止同一出口被打到降分。缓存命中不消耗令牌。",
+            )
+
+    def check_rate_for(self, url: str) -> None:
+        """供 BackendRouter 调用：按 URL 的 host 做同一套按域刹车。"""
+        host = _host_of(url)
+        if host:
+            self._check_rate(host)
 
     def end_backend_call(self, ok: bool, elapsed: float, host: str = "", backend: str = "") -> None:
         """归还准入门票 + 记账（次数、耗时分布、按后端、按域）。"""
@@ -1098,25 +1183,34 @@ class Solver:
                 self._detect_cache.pop(oldest, None)
             self._detect_cache[host] = (_now() + self.detect_cache_ttl, dict(result))
 
-    def cache_remaining(self, url: str) -> float:
+    def cache_remaining(self, url: str, want: str = "clearance") -> float:
         """这条凭证还能用多久（秒）；没有缓存或出口都在冷却时返回 -1。
 
         保活线程用它判断"要不要现在续期"，避免做无意义求解。
         """
+        want = _norm_want(want)
         host = _host_of(url)
         if not host:
             return -1.0
         entry = self._entry_for(host)
         if self._pool is not None and entry is None:
             return -1.0
-        cached = self._store.get(self.cache_key(host, entry))
-        if not cached:
+        try:
+            cached = self._store.get(self.cache_key(host, entry, want))
+        except Exception:  # noqa: BLE001 —— 保活轮询不能因存储抖动退出
             return -1.0
-        return max(0.0, float(cached.get("expires_at", 0)) - _now())
+        if not _cache_usable(cached, want):
+            return -1.0
+        return max(0.0, float(cached["expires_at"]) - _now())
 
     # -- 缓存键 ---------------------------------------
-    def cache_key(self, host: str, entry=None) -> str:
-        """缓存键 = 域名 + 出口标识。
+    def cache_key(self, host: str, entry=None, want: str = "clearance") -> str:
+        """缓存键 = 域名 + 出口标识 + 产物类型。
+
+        **want 必须进键**（v6.4.3 修复）：`clearance` 与 `awswaf` 都是可缓存产物，
+        但形状完全不同。旧键只有 domain+egress，导致 `want=awswaf` 命中 clearance 缓存后
+        返回 `solved:true` 却没有 `aws_waf_token`（实测）。一次性 token 本来就不缓存，
+        所以这里只需区分两个可缓存产物。
 
         **UA 不进键**（这是经过一轮审查后改的，理由要说清）：
           · 缓存里存的是**成对**的「cookie + 当时的 UA」，回放时客户端用的就是这对值
@@ -1128,7 +1222,7 @@ class Solver:
         UA 只用于观测（`/health.ua_fingerprint`），让运维一眼看出两个进程能否共享缓存。
         """
         egress = entry.egress_id if entry is not None else self.egress_id
-        raw = f"{host}|{egress}".encode("utf-8")
+        raw = f"{host}|{egress}|{_norm_want(want)}".encode("utf-8")
         return hashlib.sha256(raw).hexdigest()[:32]
 
     # -- 单次求解（在 worker 线程里执行）--------------
@@ -1459,11 +1553,14 @@ class Solver:
         sitekey: str = "",
         action: str = "",
         cdata: str = "",
+        rate_checked: bool = False,
+        rate_state: dict | None = None,
     ) -> dict:
         try:
             want_enum = Want.parse(want)
         except ValueError as e:
             raise SolveError(ErrorCode.INVALID_REQUEST, str(e), stage="validate") from e
+        want_value = _norm_want(want_enum.value)
         if self._stopping.is_set():
             raise SolveError(
                 ErrorCode.BROWSER_UNAVAILABLE, "服务正在关闭，不再受理新请求", stage="admit",
@@ -1497,12 +1594,15 @@ class Solver:
                 hint="等冷却结束，或加更多出口；/health 的 proxies 字段能看到各自冷却剩余时间",
             )
 
-        key = self.cache_key(host, proxy_entry)
+        key = self.cache_key(host, proxy_entry, want_value)
         # 一次性 token 绝不进缓存（复用必然失败）；cookie 类才按域复用
         cacheable = want_enum in CACHEABLE_WANTS
         if not force and cacheable:
-            cached = self._store.get(key)
-            if cached and cached.get("expires_at", 0) > _now():
+            try:
+                cached = self._store.get(key)
+            except Exception:  # noqa: BLE001 —— 缓存坏了不该打断求解
+                cached = None
+            if _cache_usable(cached, want_value):
                 with self._lock:
                     self._hits += 1
                 hit = dict(cached)
@@ -1515,7 +1615,7 @@ class Solver:
         if cacheable and not force:
             claimed = self._claim(key, budget)
             if not claimed:
-                peer = self._wait_for_peer(key, budget)
+                peer = self._wait_for_peer(key, budget, want_value)
                 if peer is not None:
                     return peer
 
@@ -1547,7 +1647,15 @@ class Solver:
             )
 
         t0 = time.monotonic()
+        rate_charged = False
         try:
+            # 按域刹车放在 claim/wait 与 inflight 之后、真正发求解之前：
+            # 缓存命中/等对端命中/准入 busy 都不该消耗令牌。
+            if not rate_checked:
+                self._check_rate(host)
+                rate_charged = True
+                if rate_state is not None:
+                    rate_state["charged"] = True
             r = self._submit(
                 lambda b: self._do_solve(
                     b, url, budget, proxy,
@@ -1559,16 +1667,29 @@ class Solver:
             # 失败也要放掉抢占：否则别的进程会白等一个"永远不会来"的缓存（最多等满 claim TTL）
             if claimed:
                 self._release_claim(key)
+            if (rate_charged and self._rate_limiter is not None
+                    and e.code in (ErrorCode.BUSY, ErrorCode.BROWSER_UNAVAILABLE)
+                    and (self._stopping.is_set()
+                         or "并发求解数已达上限" in str(e)
+                         or "求解队列已满" in str(e)
+                         or "浏览器启动失败" in str(e))):
+                # 准入拒绝（没真正发起求解）才退令牌：stopping/队列满/浏览器启动失败。
+                # 路由侧（rate_checked）扣的令牌由 rate_state 负责对称性，这里不动。
+                self._rate_limiter.refund(host)
             # 失败也要记账：HELP 声明"含失败"，而旧实现只在成功路径 +1（指标说谎）。
             # 参数错误/队列满这类**没真正发起求解**的终止性错误不该算一次求解。
-            if e.code not in (ErrorCode.INVALID_REQUEST, ErrorCode.BUSY, ErrorCode.UNAUTHORIZED):
+            if (e.code not in (ErrorCode.INVALID_REQUEST, ErrorCode.BUSY,
+                               ErrorCode.UNAUTHORIZED, ErrorCode.RATE_LIMITED)
+                    and not self._stopping.is_set()):
                 self._account(False, round(time.monotonic() - t0, 2), host=host, backend="camoufox")
             # 只有"可能是出口的锅"的失败才记在代理头上；
             # 参数错误/队列满/自身在关闭，与出口无关，记进去会误伤（把好代理冷却掉）。
             if (
                 self._pool is not None
                 and proxy_entry is not None
-                and e.code in (ErrorCode.UNSOLVED, ErrorCode.BROWSER_UNAVAILABLE, ErrorCode.TIMEOUT, ErrorCode.TRANSPORT)
+                and not self._stopping.is_set()
+                and e.code in (ErrorCode.UNSOLVED, ErrorCode.BROWSER_UNAVAILABLE,
+                               ErrorCode.TIMEOUT, ErrorCode.TRANSPORT)
             ):
                 self._pool.record_failure(proxy_entry, e.code.value)
             raise
@@ -1647,12 +1768,29 @@ class Solver:
         # 标出产出这条凭证的后端：router 路径由 router 填，直连 Solver 的路径在这里补，
         # 否则同一条链路里"有时有 backend 字段、有时没有"，调用方没法统一处理。
         result.setdefault("backend", "camoufox")
+        # 落盘前统一 stamp：直连 Solver 的 result 可能没有 want 字段，
+        # 不补的话 awswaf 条目下次会按 clearance 读，永远 miss。
+        result["want"] = want_value
+        field = RESULT_FIELD[want_enum]
+        if not str(result.get(field) or "").strip():
+            if claimed:
+                self._release_claim(key)
+            self._account(False, elapsed, host=host, backend="camoufox")
+            raise SolveError(
+                ErrorCode.UNSOLVED,
+                f"后端没有产出 {field}（want={want_value}），拒绝写入缓存",
+                stage="solve",
+            )
         if want_enum in TOKEN_WANTS:
             result["token_field"] = token_field     # 告诉调用方塞进哪个表单字段
         else:
-            self._store.set(key, result)            # 只有 cookie 类落盘（IO 不持锁）
-            if claimed:
-                self._release_claim(key)            # 缓存已就绪，放行其它进程
+            try:
+                self._store.set(key, result)        # 只有 cookie 类落盘（IO 不持锁）
+            except Exception:  # noqa: BLE001 —— 磁盘满/SQLite 锁超时：仍把凭证返回给调用方
+                pass
+            finally:
+                if claimed:
+                    self._release_claim(key)        # 无论落盘成败都放行其它进程
         if self._pool is not None and proxy_entry is not None:
             self._pool.record_success(proxy_entry, elapsed)
         with self._lock:
@@ -1955,6 +2093,9 @@ class Solver:
         # v6.2：进程自检（RSS/峰值/线程数）。读的是操作系统计数，本身很快，
         # 但也放在锁外——它不是求解状态的一部分。
         kwargs["process_fn"] = process_metrics
+        # v6.4.3 B10：按域限流的拒绝计数（默认关时传 None，不出现该 family）。
+        kwargs["ratelimit_fn"] = (self._rate_limiter.snapshot
+                                  if self._rate_limiter is not None else None)
         return render_metrics_text(**kwargs)
 
     def _wedged_snapshot(self) -> dict:
@@ -1977,7 +2118,7 @@ class Solver:
             self._tasks.put_nowait(None)
         except queue.Full:
             pass
-        self._fail_all_queued(SolveError(ErrorCode.INTERNAL, "服务正在关闭", stage="admit"))
+        self._fail_all_queued(SolveError(ErrorCode.BROWSER_UNAVAILABLE, "服务正在关闭", stage="admit"))
         self._thread.join(timeout=SHUTDOWN_GRACE)
 
 
@@ -2207,12 +2348,23 @@ class Handler(BaseHTTPRequestHandler):
     def _authorized(self) -> bool:
         """GET /health 公开（供容器健康检查），其余一律要求 Bearer token。"""
         expected = self.__class__.token
+        # fail-closed：只有显式空字符串代表 --no-auth；None/bytes/其它类型一律拒绝。
+        if expected is None or not isinstance(expected, str):
+            return False
         if not expected:
             return True
         header = self.headers.get("Authorization", "")
         if not header.lower().startswith("bearer "):
             return False
-        return secrets.compare_digest(header[7:].strip(), expected)
+        # compare_digest 对含非 ASCII 的 str 会抛 TypeError（http.client 以 ISO-8859-1
+        # 解码头，所以任意字节都能走到这里）。统一转 bytes 再比，并兜住编码异常：
+        # 未授权请求必须是 401 JSON，不能变成 traceback + 连接被关。
+        try:
+            given = header[7:].strip().encode("utf-8", "surrogatepass")
+            expected_b = expected.encode("utf-8", "surrogatepass")
+        except (UnicodeError, AttributeError):
+            return False
+        return secrets.compare_digest(given, expected_b)
 
     def _authorized_compat(self, payload: dict) -> bool:
         """兼容层鉴权：Bearer 优先，其次 body 里的 `clientKey`（YesCaptcha 客户端的习惯）。
@@ -2223,6 +2375,8 @@ class Handler(BaseHTTPRequestHandler):
         if self._authorized():
             return True
         expected = self.__class__.token
+        if expected is None or not isinstance(expected, str):
+            return False
         if not expected:
             return True          # `--no-auth` 联调模式：与其它端点同语义
         client_key = payload.get("clientKey")
@@ -2232,9 +2386,11 @@ class Handler(BaseHTTPRequestHandler):
         # （它只对 bytes 做常量时间比较）。不转的话，任何人发 {"clientKey":"密码"}
         # 就能让服务回 ERROR_INTERNAL + 打一条 traceback —— 既是误诊，也是零成本日志放大。
         try:
-            return secrets.compare_digest(client_key.encode("utf-8"), expected.encode("utf-8"))
-        except (UnicodeError, TypeError):
+            given_b = client_key.encode("utf-8", "surrogatepass")
+            expected_b = expected.encode("utf-8", "surrogatepass")
+        except (UnicodeError, AttributeError):
             return False
+        return secrets.compare_digest(given_b, expected_b)
 
     def _compat_send_error(self, err) -> None:
         """兼容层的错误一律 HTTP 200 + errorId=1（生态客户端只看 errorId，看状态码会当网络错重试）。"""
@@ -2653,7 +2809,8 @@ class Handler(BaseHTTPRequestHandler):
                 budget = max(2.0, min(8.0, float(timeout)))
             except (TypeError, ValueError):
                 budget = 8.0
-            result = probe_protection(url, timeout=budget, guard=self.solver.guard_hop)
+            result = probe_protection(url, timeout=budget, guard=self.solver.guard_hop,
+                                      user_agent=self.solver.probe_user_agent())
             self.solver.detect_cache_put(url, result)
             return result
         except SolveError:

@@ -2,14 +2,14 @@
   "task_id": "e2e-local",
   "status": "done",
   "result": "passed",
-  "timestamp": "2026-11-05T09:59:00+0800",
-  "baseline_commit": "7f647b5",
-  "duration_sec": 22.8,
+  "timestamp": "2026-11-12T23:32:52+0800",
+  "baseline_commit": "fd981ee",
+  "duration_sec": 21.0,
   "commands_executed": [
     {
       "cmd": "python scripts/e2e_local.py --json-out evidence/e2e-local.json",
       "exit_code": 0,
-      "raw_output_tail": "[PASS] B02_detect_plain_site_is_direct  — status=200 protected=False route=direct\n[PASS] B03_route_auto_skips_solve  — status=200 no_challenge=True solves=0->0 elapsed=0.01s\n[PASS] B04_route_auto_is_fast  — elapsed=0.01s (<10s)\n[PASS] B05_route_auto_returns_decision  — routed_by={\"mode\": \"auto\", \"action\": \"skip\", \"reason\": \"no-protection\", \"prefer\": \"any\", \"hint\": \"探测未命中任何防护特征，直接请求目标站即可（省掉一次 16–20s 的浏览器求解）\", \"detail\": {\"status\": 200}, \"\n[PASS] B06_fixed_path_structured_result  — status=200 solved=False ok=False error_code=unsolved\n[PASS] B07_alive_after_browser_run  — state=ready failures=1\n[PASS] B08_audit_log_written  — 2 行\n[PASS] B09_audit_has_solve_event  — events=solve\n[PASS] B10_audit_has_no_token  — token 未出现在审计文件中\n[PASS] B11_shutdown_202  — http=202\n[PASS] B12_shutdown_exit_code_0  — exit=0\n[PASS] B13_no_traceback_in_log\n"
+      "raw_output_tail": "[PASS] B02_detect_plain_site_is_direct  — status=200 protected=False route=direct\n[PASS] B03_route_auto_skips_solve  — status=200 no_challenge=True solves=0->0 elapsed=0.02s\n[PASS] B04_route_auto_is_fast  — elapsed=0.02s (<10s)\n[PASS] B05_route_auto_returns_decision  — routed_by={\"mode\": \"auto\", \"action\": \"skip\", \"reason\": \"no-protection\", \"prefer\": \"any\", \"hint\": \"探测未命中任何防护特征，直接请求目标站即可（省掉一次 16–20s 的浏览器求解）\", \"detail\": {\"status\": 200}, \"\n[PASS] B06_fixed_path_structured_result  — status=200 solved=False ok=False error_code=unsolved\n[PASS] B07_alive_after_browser_run  — state=ready failures=1\n[PASS] B08_audit_log_written  — 3 行\n[PASS] B09_audit_has_solve_event  — events=detect,solve\n[PASS] B10_audit_has_no_token  — token 未出现在审计文件中\n[PASS] B11_shutdown_202  — http=202\n[PASS] B12_shutdown_exit_code_0  — exit=0\n[PASS] B13_no_traceback_in_log\n"
     }
   ],
   "files_changed": [],
@@ -18,7 +18,7 @@
       "name": "A01_service_ready",
       "type": "e2e",
       "status": "pass",
-      "evidence": "port=60883 token_file=有"
+      "evidence": "port=46578 token_file=有"
     },
     {
       "name": "A02_token_file_created",
@@ -42,7 +42,7 @@
       "name": "A05_health_auth_full_view",
       "type": "e2e",
       "status": "pass",
-      "evidence": "cache=sqlite:C:\\Users\\ADMINI~1.DES\\AppData\\Local\\Temp\\cfsolve-e2e-6klf1cea\\cache solves=0"
+      "evidence": "cache=sqlite:C:\\Users\\ADMINI~1.DES\\AppData\\Local\\Temp\\cfsolve-e2e-6s9f_30a\\cache solves=0"
     },
     {
       "name": "A06_metrics_without_token_401",
@@ -54,7 +54,7 @@
       "name": "A07_metrics_with_token",
       "type": "e2e",
       "status": "pass",
-      "evidence": "status=200 type=text/plain; version=0.0. bytes=2590"
+      "evidence": "status=200 type=text/plain; version=0.0. bytes=2768"
     },
     {
       "name": "A08_detect_blocks_internal_url",
@@ -114,13 +114,13 @@
       "name": "A19_request_id_in_header",
       "type": "e2e",
       "status": "pass",
-      "evidence": "x-request-id='a3b9b214e13a'"
+      "evidence": "x-request-id='7ccfa6c76ecc'"
     },
     {
       "name": "A20_request_id_in_envelope",
       "type": "e2e",
       "status": "pass",
-      "evidence": "envelope='a3b9b214e13a' header='a3b9b214e13a'"
+      "evidence": "envelope='7ccfa6c76ecc' header='7ccfa6c76ecc'"
     },
     {
       "name": "A21_statuspage_public_html",
@@ -174,13 +174,13 @@
       "name": "A16_no_traceback_in_log",
       "type": "e2e",
       "status": "pass",
-      "evidence": "日志行数=13"
+      "evidence": "日志行数=25"
     },
     {
       "name": "B01_service_ready",
       "type": "e2e",
       "status": "pass",
-      "evidence": "port=60971"
+      "evidence": "port=49003"
     },
     {
       "name": "B02_detect_plain_site_is_direct",
@@ -192,13 +192,13 @@
       "name": "B03_route_auto_skips_solve",
       "type": "e2e",
       "status": "pass",
-      "evidence": "status=200 no_challenge=True solves=0->0 elapsed=0.01s"
+      "evidence": "status=200 no_challenge=True solves=0->0 elapsed=0.02s"
     },
     {
       "name": "B04_route_auto_is_fast",
       "type": "e2e",
       "status": "pass",
-      "evidence": "elapsed=0.01s (<10s)"
+      "evidence": "elapsed=0.02s (<10s)"
     },
     {
       "name": "B05_route_auto_returns_decision",
@@ -222,13 +222,13 @@
       "name": "B08_audit_log_written",
       "type": "e2e",
       "status": "pass",
-      "evidence": "2 行"
+      "evidence": "3 行"
     },
     {
       "name": "B09_audit_has_solve_event",
       "type": "e2e",
       "status": "pass",
-      "evidence": "events=solve"
+      "evidence": "events=detect,solve"
     },
     {
       "name": "B10_audit_has_no_token",
@@ -259,7 +259,7 @@
     {
       "name": "A01_service_ready",
       "ok": true,
-      "detail": "port=60883 token_file=有"
+      "detail": "port=46578 token_file=有"
     },
     {
       "name": "A02_token_file_created",
@@ -279,7 +279,7 @@
     {
       "name": "A05_health_auth_full_view",
       "ok": true,
-      "detail": "cache=sqlite:C:\\Users\\ADMINI~1.DES\\AppData\\Local\\Temp\\cfsolve-e2e-6klf1cea\\cache solves=0"
+      "detail": "cache=sqlite:C:\\Users\\ADMINI~1.DES\\AppData\\Local\\Temp\\cfsolve-e2e-6s9f_30a\\cache solves=0"
     },
     {
       "name": "A06_metrics_without_token_401",
@@ -289,7 +289,7 @@
     {
       "name": "A07_metrics_with_token",
       "ok": true,
-      "detail": "status=200 type=text/plain; version=0.0. bytes=2590"
+      "detail": "status=200 type=text/plain; version=0.0. bytes=2768"
     },
     {
       "name": "A08_detect_blocks_internal_url",
@@ -339,12 +339,12 @@
     {
       "name": "A19_request_id_in_header",
       "ok": true,
-      "detail": "x-request-id='a3b9b214e13a'"
+      "detail": "x-request-id='7ccfa6c76ecc'"
     },
     {
       "name": "A20_request_id_in_envelope",
       "ok": true,
-      "detail": "envelope='a3b9b214e13a' header='a3b9b214e13a'"
+      "detail": "envelope='7ccfa6c76ecc' header='7ccfa6c76ecc'"
     },
     {
       "name": "A21_statuspage_public_html",
@@ -389,12 +389,12 @@
     {
       "name": "A16_no_traceback_in_log",
       "ok": true,
-      "detail": "日志行数=13"
+      "detail": "日志行数=25"
     },
     {
       "name": "B01_service_ready",
       "ok": true,
-      "detail": "port=60971"
+      "detail": "port=49003"
     },
     {
       "name": "B02_detect_plain_site_is_direct",
@@ -404,12 +404,12 @@
     {
       "name": "B03_route_auto_skips_solve",
       "ok": true,
-      "detail": "status=200 no_challenge=True solves=0->0 elapsed=0.01s"
+      "detail": "status=200 no_challenge=True solves=0->0 elapsed=0.02s"
     },
     {
       "name": "B04_route_auto_is_fast",
       "ok": true,
-      "detail": "elapsed=0.01s (<10s)"
+      "detail": "elapsed=0.02s (<10s)"
     },
     {
       "name": "B05_route_auto_returns_decision",
@@ -429,12 +429,12 @@
     {
       "name": "B08_audit_log_written",
       "ok": true,
-      "detail": "2 行"
+      "detail": "3 行"
     },
     {
       "name": "B09_audit_has_solve_event",
       "ok": true,
-      "detail": "events=solve"
+      "detail": "events=detect,solve"
     },
     {
       "name": "B10_audit_has_no_token",

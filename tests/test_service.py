@@ -766,7 +766,8 @@ def test_cgnat_is_blocked():
     try:
         assert s._classify_host("100.64.1.5") == "blocked"
         assert s._classify_host("100.127.255.1") == "blocked"
-        assert s._classify_host("100.128.0.1") == "allowed" or True  # 边界外不强断言（依赖 DNS）
+        assert s._classify_host("100.128.0.1") in ("allowed", "unresolvable"), \
+            "100.128.0.1 在 CGNAT 边界外，不该被判成 blocked（DNS 失败只算 unresolvable）"
     finally:
         s.close()
 
@@ -1315,3 +1316,117 @@ def test_options_has_no_content_length_and_connect_is_405(live_server):
     assert status == 405, status
     assert "Allow" in headers
     assert json.loads(body.decode())["error_code"] == "method-not-allowed"
+
+
+def test_allow_private_hosts_still_rejects_non_http_scheme():
+    """`--allow-private-hosts` 只该跳过私网判定，不该放行 file:/gopher:（P3-17）。"""
+    s = service.Solver(browser_factory=factory_returning(FakeBrowser()), allow_private_hosts=True)
+    try:
+        with pytest.raises(Exception) as ei:
+            s.guard_hop("file:///etc/passwd")
+        assert "非 http" in str(ei.value) or "http" in str(ei.value)
+    finally:
+        s.close()
+
+
+# ── P3-01：鉴权/请求体的错误分支（不联网、不起服务）────
+
+
+def _handler_stub(**attrs):
+    """不跑 BaseHTTPRequestHandler.__init__，只装出被测方法要用的字段。"""
+    h = object.__new__(service.Handler)
+    h.headers = attrs.pop("headers", {})
+    h.path = attrs.pop("path", "/")
+    h.close_connection = attrs.pop("close_connection", False)
+    h.rfile = attrs.pop("rfile", None)
+    for key, value in attrs.items():
+        setattr(h, key, value)
+    return h
+
+
+def test_authorized_handles_no_auth_and_non_ascii_without_traceback(monkeypatch):
+    monkeypatch.setattr(service.Handler, "token", "", raising=False)
+    assert service.Handler._authorized(_handler_stub()) is True, "--no-auth 语义"
+
+    monkeypatch.setattr(service.Handler, "token", "secret-token", raising=False)
+    assert service.Handler._authorized(
+        _handler_stub(headers={"Authorization": "Bearer 密碼"})) is False
+    assert service.Handler._authorized(
+        _handler_stub(headers={"Authorization": "Bearer secret-token"})) is True
+
+
+def test_authorized_compat_accepts_client_key_and_rejects_non_string(monkeypatch):
+    monkeypatch.setattr(service.Handler, "token", "secret-token", raising=False)
+    h = _handler_stub()
+    assert service.Handler._authorized_compat(h, {"clientKey": "secret-token"}) is True
+    assert service.Handler._authorized_compat(h, {"clientKey": 123}) is False
+    assert service.Handler._authorized_compat(h, {"clientKey": "密碼"}) is False
+
+
+def test_read_body_raw_rejects_bad_content_length_and_chunked():
+    h = _handler_stub(headers={"Content-Length": "abc"})
+    assert service.Handler._read_body_raw(h) == (b"", "Content-Length 非法")
+
+    h2 = _handler_stub(headers={"Transfer-Encoding": "chunked"})
+    body, err = service.Handler._read_body_raw(h2)
+    assert body == b"" and "chunked" in err
+    assert h2.close_connection is True, "chunked 必须关连接，避免残余字节被当成下一个请求"
+
+
+def test_query_lines_clamps_and_defaults():
+    assert service.Handler._query_lines(_handler_stub(path="/logs?lines=999999")) \
+        == service.MAX_LOG_LINES
+    assert service.Handler._query_lines(_handler_stub(path="/logs?lines=abc")) \
+        == service.DEFAULT_LOG_LINES
+    assert service.Handler._query_lines(_handler_stub(path="/logs")) == service.DEFAULT_LOG_LINES
+
+
+def test_classify_host_skips_non_ip_addrinfo(monkeypatch):
+    """getaddrinfo 偶尔返回非 IP 的地址（Unix socket/TCP 描述），不能因此 500。"""
+    monkeypatch.setattr(service.socket, "getaddrinfo",
+                        lambda *a, **k: [(2, 1, 6, "", ("not-an-ip", 0))])
+    assert service.Solver._classify_host(None, "example.com") == "allowed"
+
+
+def test_authorized_none_or_non_str_token_fails_closed(monkeypatch):
+    """`str(None)` 曾让 `Bearer None` 通过；None/bytes 必须 fail-closed。"""
+    h = _handler_stub(headers={"Authorization": "Bearer None"})
+    for bad in (None, b"secret", 123):
+        monkeypatch.setattr(service.Handler, "token", bad, raising=False)
+        assert service.Handler._authorized(h) is False, bad
+        assert service.Handler._authorized_compat(h, {"clientKey": "None"}) is False, bad
+    monkeypatch.setattr(service.Handler, "token", "", raising=False)
+    assert service.Handler._authorized(h) is True       # 显式空串 = --no-auth
+
+
+def test_launch_timer_is_cleared_after_ready():
+    """看门狗只靠 `_launch_started_at` 判断重启挂起；ready 后必须清零。"""
+    s = service.Solver(browser_factory=factory_returning(FakeBrowser()))
+    try:
+        assert wait_until(lambda: s.health()[0] == 200)
+        assert s._launch_started_at == 0.0
+    finally:
+        s.close()
+
+
+def test_authorized_compat_non_ascii_client_key_is_401_not_500(monkeypatch):
+    """兼容层 clientKey 含非 ASCII：compare_digest 用 bytes，不能 500。"""
+    h = _handler_stub(headers={})
+    monkeypatch.setattr(service.Handler, "token", "secret-token", raising=False)
+    assert service.Handler._authorized_compat(h, {"clientKey": "café"}) is False
+    assert service.Handler._authorized_compat(h, {"clientKey": {"x": 1}}) is False
+
+
+def test_rate_refund_only_for_admission_rejections():
+    """退款只发生在“没真正发起求解”的准入拒绝；后端失败不退。"""
+    from test_governance import make_solver
+    s = make_solver(rate_per_host=0.001, rate_burst=1)
+    try:
+        # stopping 触发的 BROWSER_UNAVAILABLE（服务正在关闭）→ 退
+        s._stopping.set()
+        with pytest.raises(Exception):
+            s.solve(HOST, timeout=10, force=True)
+        s._stopping.clear()
+        assert s._rate_limiter.snapshot()["total"] == 0
+    finally:
+        s.close()

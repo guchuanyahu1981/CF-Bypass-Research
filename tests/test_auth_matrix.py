@@ -12,6 +12,8 @@
 from __future__ import annotations
 
 import json
+import socket
+import urllib.parse
 
 import pytest
 
@@ -99,3 +101,30 @@ def test_compat_non_ascii_client_key_does_not_500(live_server):
     assert status == 200, f"非 ASCII clientKey 导致 {status}（应 200 + errorId=1）"
     assert body.get("errorId") == 1
     assert body.get("errorCode") == "ERROR_KEY_DOES_NOT_EXIST"
+
+
+def test_non_ascii_bearer_is_401_not_a_closed_connection(live_server):
+    """非 ASCII Bearer 不能把 `_authorized` 打成未捕获 TypeError。
+
+    用原始 socket 发 ISO-8859-1 字节（urllib 会在客户端就拒绝这种 header）。
+    修前：服务端 traceback、客户端收到空响应；修后：401 + JSON error_code=unauthorized。
+    """
+    port = urllib.parse.urlsplit(live_server).port
+    request = (
+        "GET /status HTTP/1.1\r\n"
+        f"Host: 127.0.0.1:{port}\r\n"
+        "Authorization: Bearer \xff\xfe\r\n"
+        "Connection: close\r\n\r\n"
+    )
+    with socket.create_connection(("127.0.0.1", port), timeout=5) as sock:
+        sock.sendall(request.encode("latin-1"))
+        chunks = []
+        while True:
+            data = sock.recv(4096)
+            if not data:
+                break
+            chunks.append(data)
+    raw = b"".join(chunks)
+    head, _, body = raw.partition(b"\r\n\r\n")
+    assert b" 401 " in head.split(b"\r\n", 1)[0], raw[:200]
+    assert b"unauthorized" in body, body[:200]

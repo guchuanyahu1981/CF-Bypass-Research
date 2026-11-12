@@ -7,12 +7,13 @@
 
 | 你要做什么 | 我们给你什么 | 实测效果 |
 |---|---|---|
-| 高频访问受 CF 保护的站 | 一次求解、30 分钟内**全部 <3ms 回放** | 热路径 5589 QPS / p99 2.93ms / 0 错 |
+| 高频访问受 CF 保护的站 | 一次求解、30 分钟内**全部 <3ms 回放** | 热路径 4929 QPS / p99 3.43ms / 0 错（v6.4.3） |
 | 大量站点、不确定哪些有盾 | `route=auto` 自动探测：无盾直接过、有盾自动解 | 无盾站 0.55s 放行、**0 次求解** |
 | 要 Turnstile 一次性 token | `want=turnstile`，**纯协议直解**（无浏览器进程） | 官方测试 sitekey 6–8s |
 | 要 `cf_clearance` cookie 供任意 HTTP 客户端用 | `want=clearance` + Go 客户端自动回放 | 回放 200、1.3–1.7s |
 | 服务高可用 | 多进程池 + 失败摘除 2s / 回归 28s + 403 自愈 | 摘除/回归真机演练通过 |
 | 浏览器"半死"（进程活着但调用永不返回） | **v6.2 看门狗**：任务超期判定 `wedged` → 进程以 75 退出，supervisor 拉起干净进程 | 实测复现原缺陷（worker 永久卡死）；修复后 subprocess 断言退出码 75 |
+| 给 AI agent 用 | `python run.py mcp`（MCP stdio，5 工具：solve/fetch/detect/health/capabilities） | 零新依赖；见 `docs/MCP.md` |
 | 存量 YesCaptcha 客户端 | **v6.2 兼容层 19 种 task type** + 生态错误码词表 | 主链路 7 种 + 嫁接层 12 种 + 明确拒绝 8 种（图片识别类，含原因） |
 | 内存敏感环境 | `--pure-only`：**72MB 无浏览器进程**的纯协议模式 | 同站 A/B 18.43s 最快 |
 | 非 CF 的验证码/反爬（DataDome / PerimeterX / Akamai / Arkose / hCaptcha / reCAPTCHA / 阿里滑块…） | **v6.1 万盾嫁接层**：`want=datadome` 等 11 个扩展类型；`route=auto` 探测到即自动分发 | 求解器本体未做真机实测（需 cloakbrowser + 真实挑战页）；嫁接层契约已测 |
@@ -33,7 +34,7 @@ Go 网关(gocfsolve.Client/Pool) ──POST /solve──► solver/service.py (:
           ◄── cf_clearance + user_agent + attempts 轨迹 ──┘
           │
           └─ net/http + 同 UA + 同 Cookie + 同出口 IP ──► 目标站 200
-             (缓存命中热路径: 零 Python 参与, 离线压测 5589 QPS / p99 2.93ms)
+             (缓存命中热路径: 零 Python 参与, 离线压测 4929 QPS / p99 3.43ms（v6.4.3）)
 ```
 
 | 组件 | 路径 | 状态 |
@@ -242,7 +243,7 @@ https://steamdb.info/  →  status=200  len=201391  challenge_page=false  elapse
 
 ```
 solver/
-  service.py            # ★ 服务主体：HTTP 层 + Solver 状态机（v5.0 下沉后 2073 行）
+  service.py            # ★ 服务主体：HTTP 层 + Solver 状态机（v6.4.3，3082 行）
   bootstrap.py          # CLI 装配（参数解析 + 组件装配 + 信号处理，v5.0 下沉）
   metrics.py            # Prometheus 文本渲染（v5.0 下沉，覆盖率 95%）
   request.py            # 请求解析与校验（D1 下沉：纯函数，52 项边界单测，覆盖率 99%）
@@ -286,7 +287,7 @@ scripts/
   probe_camoufox.py     # Camoufox 过盾实验
   diag_challenge.py     # 挑战页 DOM 诊断：iframe / checkbox / 按钮 / 截图
 captchas/               # 万盾求解器副本（11 厂商；自包含，不追上游，见 captchas/README.md）
-tests/                  # 1066 项 Python 测试（注入假浏览器/假后端，离线）
+tests/                  # 1237 项 Python 测试（注入假浏览器/假后端，离线）
 docs/
   项目规格.md            # ★ 单一事实源：是什么/边界/承诺什么/不承诺什么
   API.md                # ★ 接口契约（参数/响应/错误码表）
@@ -362,12 +363,28 @@ cl, err := pool.Get(ctx, target)      // 同域永远打到同一个 worker
 .\run.ps1 doctor     # 环境自检：依赖/浏览器二进制/端口/缓存目录/token + 起一次服务打 /health
 .\run.ps1 test       # Python 全量测试 + 覆盖率门槛（≥80%，低于门槛直接红）
 .\run.ps1 go         # Go: go vet + go test -race
-.\run.ps1 smoke      # 起服务 → /health → /detect → SSRF 守卫，全链路冒烟
+.\run.ps1 smoke      # 起服务 → /health → /detect → SSRF 守卫（默认读 .env token；--no-auth 调试）
 .\run.ps1 e2e        # 真进程 E2E：鉴权/metrics/route=auto/审计/优雅退出（离线，约 17s）
 .\run.ps1 bench      # 离线压测三模式（hot 回放吞吐 / cold 准入 / share 多进程缓存）
-.\run.ps1 verify     # 提交前必跑：以上全部
+.\run.ps1 verify     # 提交前必跑：pytest + 覆盖率 + compileall + Go + findings + e2e + smoke + 卫生 + 研究台 + 服务报告（不含 doctor/bench）
 .\run.ps1 stop       # 停掉占着端口的进程
-```
+
+#### 四类验收（发版/大改后必跑，2026-11-12 定稿）
+
+| 轨道 | 命令 | 证据 |
+|---|---|---|
+| verify（13 步门禁） | `run.ps1 verify` | coverage.json、e2e-local.json |
+| UI 截图验收 | `run.ps1 ui` | `evidence/ui-acceptance.json` + `plans/证据/ui-*.png`（70 断言：9 状态、每按钮、键盘、axe 深浅主题、320/360） |
+| 真实调用验收 | `run.ps1 realcalls` | `evidence/realcalls.json`（46 项：全端点 × 鉴权两态、HEAD/OPTIONS/405/keep-alive/chunked） |
+| 真实 E2E 验收 | `run.ps1 e2e` | `evidence/e2e-local.json`（40 项：真进程 + 真浏览器业务链路） |
+| 独立代码复审 | `run.ps1 review` | `evidence/code-review*.md`（`claude -p` 按领域拆分，每份强制 `VERDICT`） |
+
+一键编排：`run.ps1 accept` = verify → UI → 真实调用 → E2E → 复审 → `evidence/acceptance.json` 汇总
+（`passed / partial / failed`）。缺任一轨、axe 违规、复审 FAIL 都不算通过；`--skip-review` /
+`--skip-browser` 会写 SKIPPED 标记并把汇总判为 `partial`（不冒充完整验收）。
+
+最近一轮（2026-11-12）：UI 70/70、真实调用 46/46、E2E 40/40、复审 13 领域全 PASS，
+Python 1229 passed / 8 skipped（1237 收集）、solver 覆盖率 90.55%、Go 57 项 `-race` 绿。
 
 `run.bat` 是同一套子命令的 cmd 包装。
 
@@ -452,7 +469,7 @@ curl -L -A "<UA>" "https://<target>/cdn-cgi/challenge-platform/scripts/jsd/main.
 |---|---|
 | `--prewarm` / `--prewarm-file` | 过期前主动续期，热门域请求路径永远 <3ms（11 项单测；目标域须与 persona 匹配，用 `/detect` 批量筛） |
 | 多进程求解池 `run-pool.ps1` | 冷启动风暴吞吐 ×N |
-| `route=auto` 预检测 | 无盾站 0.55s 放行、0 次求解（33 厂商特征） |
+| `route=auto` 预检测 | 无盾站 0.55s 放行、0 次求解（34 厂商特征） |
 | 403 自愈 | clearance 失效自动重解一次，调用方无感 |
 
 **长跑进程保护（必用）**：`python scripts/run_limited.py --max-mb 2048 -- <command>`
@@ -597,4 +614,5 @@ curl -s http://127.0.0.1:8878/health | jq '.state, .last_error'
 
 ## 📄 许可
 
-MIT
+MIT。第三方来源与许可证（含 Antibot-Detector 的 NPOSL-3.0、captcha-solver 的来源待确认）
+见 [NOTICE](NOTICE)。

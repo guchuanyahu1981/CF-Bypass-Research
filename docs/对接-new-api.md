@@ -4,10 +4,13 @@
 > 你只需要读完这一页就能接。**不需要改本仓库任何代码。**
 
 - 求解服务：本仓库 `solver/service.py`（HTTP sidecar）
-- new-api：任意版本，只要能配"自定义上游 / 自定义请求头 / 前置脚本"三者之一
+- new-api：需要能自定义渠道 `base_url`（OpenAI / Custom / Advanced Custom 渠道均可）。**new-api 没有请求前置脚本**；`header_override` 只支持静态值、`{api_key}` 与 `{client_header:<name>}`（取入站请求头），不能用来在发上游请求前调用 `/solve`。
 
 > **实测性能（同站对比，2026-11-01）**：纯协议 **18.43s** < Camoufox 19.56s < pydoll 25.72s(失败)。
 > 所以对接后热路径是"缓存命中（<100ms）→ 回放（1.3–1.7s）"，冷路径才有 18–20s。
+>
+> **`/createTask` / `/getTaskResult` 是给存量 YesCaptcha 客户端的兼容层，new-api 不消费它**；本页只覆盖同步 `/solve`。
+> 薄代理必须把 `/solve` 的 `200 + ok:false` 翻译成非 2xx（502/503/504），不要原样透传给 new-api（它会把 200 当成功）。
 
 ## 零、30 秒自检（对接前先跑这两条）
 
@@ -95,7 +98,9 @@ Content-Type: application/json
 - `503 + state=starting` → 启动中（浏览器还没起来）
 - `503 + state=degraded` → 挂了，看 `last_error`
 
-**new-api 侧请用这个做渠道健康检查**，不要用 `/solve` 探活（那会真的起浏览器）。
+**new-api 的渠道测试不是“探 `/health`”**：它合成一次真实模型请求（默认 `POST /v1/chat/completions`），没有可配置的健康检查 URL。请用外部监控探 `/health`；对该渠道**关闭自动测试**，或把 `ChannelDisableThreshold` 调到大于冷求解上限（例如 60s）。否则一次冷求解会被 5s 默认阈值判超时并自动禁用渠道。
+
+- `503 + state=wedged` → worker 卡死；服务进程会以退出码 75 交 supervisor 拉起（需 `--wedge-restart`，库/测试默认关）。
 
 ### 1.3 统计 `GET /stats`、指标 `GET /metrics`（需 token）
 
@@ -147,17 +152,16 @@ func forward(r *http.Request) (*http.Response, error) {
 > `turnstile`/`recaptcha_v3` → `Clearance.Token`、`awswaf` → `Clearance.AWSWAFToken`。
 > 拿错字段会得到空串而不是报错，所以取之前先确认自己传的 `Want`。
 
-### 方案 B：new-api 支持"前置脚本/自定义 header"时，直接调 /solve
+### 方案 B：调用方先解，new-api 用 `{client_header:*}` 透传
 
-如果 new-api 的渠道支持在发请求前跑一段脚本（或自定义 header 模板），那就：
+new-api 没有“请求前置脚本”。如果求解必须发生在 new-api 之外，可以让调用方先解，把 `User-Agent` / `Cookie` 放进**发给 new-api 的请求头**，渠道的 `header_override` 用 `{client_header:User-Agent}` / `{client_header:Cookie}` 透传到上游。
 
-1. 发请求前：`POST /solve {"url": <目标页>}` → 拿 `cf_clearance` + `user_agent`
-2. 上游请求设：
-   - `User-Agent: <返回的 user_agent>`
-   - `Cookie: cf_clearance=<返回的 cf_clearance>`（有 `cookie_list` 就按域拼全）
-3. 若返回 403 或页面含 `Just a moment` → 调一次 `POST /solve {"force": true}` 重试（**最多 1 次**）
+1. 调用方先 `POST /solve` → 拿 `cf_clearance` + `user_agent`（有 `cookie_list` 就按域拼全）
+2. 调用方请求 new-api 时带 `User-Agent` 与 `Cookie`
+3. new-api 渠道配置 `header_override` 透传这两个头
+4. 若上游 403/挑战页 → 调用方 `POST /solve {"force": true}` 重解 **一次**
 
-Python 片段：
+Python 片段（在调用方运行，不在 new-api 内）：
 
 ```python
 import httpx
@@ -165,7 +169,7 @@ import httpx
 SOLVER = "http://127.0.0.1:8878"
 TOKEN  = open(".env").read().split("CF_SOLVE_TOKEN=")[1].split()[0]
 
-def fetch(target: str) -> httpx.Response:
+def fetch_via_gateway(gateway: str, target: str) -> httpx.Response:
     r = httpx.post(f"{SOLVER}/solve", headers={"Authorization": f"Bearer {TOKEN}"},
                    json={"url": target, "timeout": 45}, timeout=180)
     if r.status_code != 200:
@@ -173,8 +177,10 @@ def fetch(target: str) -> httpx.Response:
     d = r.json()
     if not d.get("solved"):
         raise RuntimeError(f"unsolved: {d.get('error_code')} {d.get('hint','')}")
-    return httpx.get(target, headers={"User-Agent": d["user_agent"],
-                                      "Cookie": f"cf_clearance={d['cf_clearance']}"}, timeout=60)
+    cookies = "; ".join(f"{c['name']}={c['value']}" for c in (d.get("cookie_list") or []))         or f"cf_clearance={d['cf_clearance']}"
+    # 请求体按你的网关契约填；关键是这两个头必须由调用方带、由渠道 header_override 透传。
+    return httpx.post(gateway, json={"target": target},
+                      headers={"User-Agent": d["user_agent"], "Cookie": cookies}, timeout=180)
 ```
 
 ### 方案 C：多实例（要吞吐时）
@@ -187,6 +193,7 @@ pwsh scripts/run-pool.ps1 -Count 4 -CacheDir "$env:LOCALAPPDATA\cfsolve\cache"
 
 Go 侧用 `cfsolve.NewPool([]string{...4 个地址...}, cfsolve.WithPoolToken(tok))`，
 它按域一致性哈希选节点，失败自动摘除/回归。
+> 单实例默认 **8 inflight + 16 队列**，满了立即 429 `busy`；要更高吞吐必须加进程，并在薄代理侧加 ≤8 的并发闸门（new-api 不替你限并发）。
 
 ---
 
@@ -195,10 +202,14 @@ Go 侧用 `cfsolve.NewPool([]string{...4 个地址...}, cfsolve.WithPoolToken(to
 | # | 细节 | 怎么处理 |
 |---|---|---|
 | 1 | **失败也是 200** | 先判断 `resp.StatusCode`，再判断 `body.ok`；不要只看状态码 |
-| 2 | **求解慢**（首解 8–31s） | 上游请求超时给足（≥60s）；或先用 `/health` 预热 + `--prewarm` 保活 |
+| 2 | **求解慢**（首解 8–31s） | `RELAY_TIMEOUT` 默认 0（不设上限），通常无需动作；若显式设了它，必须大于 solver 的 `timeout`（≤120s）+ 排队余量。或先用 `--prewarm` 保活 |
 | 3 | **凭证约 30 分钟** | 服务端已按 cookie 的 `expires` 缓存并在到期前续期；客户端无需自己管 |
 | 4 | **403 要能自愈** | 收到 403 或挑战页 → 用 `{"force": true}` 重解 **一次**，不要循环重试（会加深封禁） |
-| 5 | **换 IP 就失效** | new-api 若配了代理池，**必须**让求解与回放同出口；本服务支持 `--proxy` + 按域粘性，并把出口写进缓存键 |
+| 5 | **换 IP 就失效** | new-api 只有渠道级 `setting.proxy`（**单个 URL，没有代理池**）。方案 A 下必须留空，出口由薄代理/solver 控制；方案 B 下才需要它与 solver 的 `--proxy` 相同 |
+| 6 | **没有请求前置脚本** | 方案 B 只能“调用方先解 + `{client_header:*}` 透传”；不能在 new-api 内发请求前跑 `/solve` |
+| 7 | **重试没有退避** | new-api 的 `RetryTimes` 默认 **0**；重试是立即执行、可能切换渠道；504/524 **永不重试**，400 不重试。需要退避就在薄代理/调用方实现 |
+| 8 | **自动测试会触发冷求解** | 不要对该渠道开启自动测试；若必须开，把 `ChannelDisableThreshold` 调到大于冷求解上限（如 60） |
+| 9 | **并发没有渠道级上限** | solver 单实例默认 8 inflight + 16 队列，满了立即 429 `busy`；new-api 不替你限并发，薄代理必须自己加 ≤8 的信号量 |
 
 ---
 
@@ -208,13 +219,16 @@ Go 侧用 `cfsolve.NewPool([]string{...4 个地址...}, cfsolve.WithPoolToken(to
 |---|---|---|---|
 | `invalid-request` | 400 | 参数/目标非法（含页面跳到私网被拦） | 不要重试，记日志 |
 | `unauthorized` | 401 | token 错 | 修配置 |
-| `busy` | 429 | 队列满/并发超限 | 退避后重试（指数退避） |
+| `busy` | 429 | 队列满/并发超限 | 立即换实例/渠道，或由薄代理做**有上限**的退避；new-api 默认 `RetryTimes=0` 且自身没有退避 |
 | `unsolved` | **200** | 跑完了但没拿到凭证 | 换站点验证服务本身；或该域已升级 |
 | `timeout` | 504 | 超预算 | 调大 timeout（≤120）或降并发 |
-| `transport` | 502 | DNS/连接失败（可能是瞬时） | **可重试**（指数退避） |
+| `transport` | 502 | DNS/连接失败（可能是瞬时） | **可重试**；退避要在薄代理/调用方实现（new-api 重试是立即的） |
 | `browser-unavailable` | 503 | 浏览器挂了/重启中 | 看 `/health`，退避重试 |
 | `not-configured` | 503 | 未安装 camoufox 等 | 修环境 |
 | `internal` | 500 | 未预期 | 看服务端日志 |
+| `payload-too-large` | 413 | 请求体 > 65536 字节 | 减小 body；没有可调参数 |
+| `rate-limited` | 429 | 同域求解过频；**默认开启** `--rate-per-host 1/30`（同站约 30s 一次），`--rate-per-host 0` 可关闭 | 按 `busy` 同样处理（退避重试，不要扩并发） |
+| `not-found` / `method-not-allowed` | 404 / 405 | 路径不存在 / 方法不支持 | 修请求；它们不来自 `/solve` 业务 |
 
 ---
 

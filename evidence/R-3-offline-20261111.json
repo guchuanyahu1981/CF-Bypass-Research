@@ -1,0 +1,20 @@
+{
+  "task_id": "R-3-offline",
+  "timestamp": "2026-11-11T20:30:00+08:00",
+  "status": "root-cause-located",
+  "method": "local replay server serving the saved page.html (5910B) + orchestrator.js (623818B) at 127.0.0.1; no target-site requests",
+  "reproduction": {
+    "challenge": "http://127.0.0.1:11712/cloudflare-challenge",
+    "result": "same hang as 2026-11-10; page 200, orchestrator fetched/deobfuscated, no response.decoded.txt"
+  },
+  "root_cause": {
+    "stage": "PreparedSession::try_new -> installed::read -> Source::disassemble(initial VM program, 20614 bytes)",
+    "decode": "46th instruction: pc=7753, key=161, opcode=185",
+    "explore": "Run::handler constructed; run.invoke -> script -> slot plan (call_plan) never returns",
+    "budgets": "statement budget 1,000,000 not reached within 45s; MAXIMUM_ITERATIONS=65536 did not bound it",
+    "interpretation": "handler-level recursive/symbolic loop, not a whole-disassembler explosion"
+  },
+  "tooling_changes": "temporary eprintln instrumentation + budgets added to D:\cfsolve-upstream, then reverted; challenge.exe rebuilt clean",
+  "next": "upstream fix: add call-depth + per-handler step budget in call_plan/invoke so installed::read fails structurally instead of hanging; then retest the saved session offline",
+  "evidence": "D:\cfsolve-upstream (reverted), plans/证据/r3-stage2-20261110, local replay server in scratch"
+}

@@ -451,7 +451,7 @@
     },
     {
       "id": "F-029",
-      "claim": "已把 scrapfly/Antibot-Detector（MIT）的 33 个厂商字面特征移植为服务端探测能力（/detect + scripts/detect.py），并补 5 条自增强特征（cf-mitigated/_cf_chl_opt/cdn-cgi challenge-platform/challenges.cloudflare.com/aws-waf-token）；真机分类正确（glassdoor.co.uk 与 udemy → Cloudflare managed、example.com → 无防护）。",
+      "claim": "已把自有整理的 34 个厂商事实性信号用于服务端探测（/detect + scripts/detect.py；上游 Antibot-Detector 是 NPOSL-3.0，仅作对照），并补 5 条自增强特征（cf-mitigated/_cf_chl_opt/cdn-cgi challenge-platform/challenges.cloudflare.com/aws-waf-token）；真机分类正确（glassdoor.co.uk 与 udemy → Cloudflare managed、example.com → 无防护）。",
       "verdict": "confirmed",
       "severity": "medium",
       "evidence": [

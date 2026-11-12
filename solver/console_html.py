@@ -11,7 +11,7 @@
 **五条硬约束（test_console.py 逐条锁死）**：
   1. 零写入：无 form、无 POST、无任何改状态入口 —— 叫"只读控制台"不叫"仪表盘"；
   2. 零新依赖：HTML/CSS/JS 全部内联在这**一个字符串常量**里，无 npm/webpack/CDN；
-  3. token 保护：页面不含 token；前端 `prompt()` 现问，只存 `sessionStorage`
+  3. token 保护：页面不含 token；右上角输入，只存 `sessionStorage`
      （不写 localStorage —— 多标签页共享会留痕）；DOM 里绝不出现 token 值；
   4. CSP：响应头 `default-src 'none'`（在 service.py 的 `_send_console_page` 里下发）；
      DOM 只用 `textContent`/`createElement`，**禁止 `innerHTML`**；
@@ -56,8 +56,11 @@ __UI_TOKENS__
   .badge.starting, .badge.down, .badge.unauthorized { color:var(--bad); border-color:var(--bad); }
   /* wedged（v6.2）：worker 卡死、不会自愈 —— 实心反色，必须比 down 更刺眼 */
   .badge.wedged { background:var(--bad-solid); border-color:var(--bad-solid); color:#fff; }
-  button { padding:6px 12px; border-radius:6px; border:1px solid var(--line);
+  button { padding:8px 14px; min-height:36px; border-radius:6px; border:1px solid var(--line);
            background:var(--panel); color:var(--ink); font-size:13px; cursor:pointer; }
+  input[type=password], input[type=text] {
+    padding:8px 10px; border-radius:6px; border:1px solid var(--line);
+    background:var(--panel); color:var(--ink); font-size:13px; width:220px; min-width:0; }
   button:hover { border-color:var(--accent); color:var(--accent); }
   button:disabled { opacity:.45; cursor:not-allowed; }
   .grid { display:grid; gap:12px; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); }
@@ -84,7 +87,7 @@ __UI_TOKENS__
   /* 「结果」列固定窄宽：失败码长短不一时不能让它把「耗时」挤走 */
   #audit td:nth-child(4) { white-space:nowrap; }
   #audit tr:last-child td { border-bottom:none; }
-  code { background:rgba(127,127,127,.15); padding:1px 5px; border-radius:4px; font-size:12px; }
+  code { color:var(--ink); background:rgba(127,127,127,.15); padding:1px 5px; border-radius:4px; font-size:12px; }
 </style>
 </head>
 <body>
@@ -92,6 +95,13 @@ __UI_TOKENS__
   <h1>CF 求解服务 · 只读控制台</h1>
   <span id="state" class="badge starting">未知</span>
   <span class="spacer"></span>
+  <span class="token-group">
+    <label class="token-field"><span class="token-label">token</span>
+      <input id="token" type="password" placeholder="Bearer token（来自 .env）"
+             autocomplete="off" aria-label="Bearer token（来自 .env）"
+             title="服务端 .env 里的 CF_SOLVE_TOKEN 值"></label>
+    <button id="save" type="button">保存</button>
+  </span>
   <button id="refresh" type="button">刷新</button>
   <button id="forget" type="button">清除 token</button>
 </header>
@@ -131,7 +141,7 @@ __UI_TOKENS__
 <div class="foot">
   本页只读（零写入）：数据只来自 <code>/health</code>（含 <code>research</code> 段）
   与 <code>/audit</code>（审计 JSONL 尾部，需启动时带 <code>--audit-log</code>），
-  没有任何表单或提交入口。token 用 <code>prompt()</code> 现问、只存
+  没有任何表单或提交入口。token 在右上角输入、只存
   <code>sessionStorage</code>（关标签页即失效），不写进这个页面、不落 localStorage。
 </div>
 
@@ -150,6 +160,8 @@ __UI_TOKENS__
   var auditTimer = null;
   var refreshBtn = document.getElementById("refresh");
   var forgetBtn = document.getElementById("forget");
+  var tokenInput = document.getElementById("token");
+  var saveBtn = document.getElementById("save");
 
   __COMMON_JS__
   bindPage({ state: stateEl, banner: bannerEl });
@@ -337,6 +349,20 @@ __UI_TOKENS__
   function refreshAudit() {
     auditRefreshBtn.disabled = true;
     getJSON("/audit?lines=100").then(function (r) {
+      if (r.status === 401) {
+        // 徽章归 refreshHealth 管；审计 401 只在审计面板/横幅里说，避免两个轮询互相覆盖。
+        if (token()) {
+          setBanner("审计日志：token 被服务端拒绝（401）。请确认输入的是服务端 .env 里的 " +
+                    "CF_SOLVE_TOKEN 值；重新保存后会自动刷新。", true);
+          setEmpty(auditEl, "token 无效（401）：无法读取审计日志");
+        } else {
+          setBanner("服务活着（健康信息是公开的）。要看审计日志需要 Bearer token：" +
+                    "从服务端的 .env 里取 CF_SOLVE_TOKEN= 后面的值，输入到右上角后点「保存」。", false);
+          setEmpty(auditEl, "需要 token 才能读取审计日志");
+        }
+        auditRefreshBtn.disabled = false;
+        return;
+      }
       renderAudit(r);
     }).catch(function (e) {
       auditEl.className = "error";
@@ -347,16 +373,6 @@ __UI_TOKENS__
   function refreshHealth() {
     refreshBtn.disabled = true;
     renderEmptyStates();
-    if (!token()) {
-      var t = window.prompt("输入 Bearer token（.env 的 CF_SOLVE_TOKEN= 后面的值）", "");
-      if (t == null) {
-        setState("未鉴权", "unauthorized");
-        setBanner("未提供 token：所有区块都没有数据。点「刷新」可重新输入。", false);
-        refreshBtn.disabled = false;
-        return Promise.resolve();
-      }
-      sessionStorage.setItem(TOKEN_KEY, t.trim());
-    }
     return getHealth().then(function (r) {
       if (r.status === 401) {
         sessionStorage.removeItem(TOKEN_KEY);
@@ -418,12 +434,30 @@ __UI_TOKENS__
   });
   forgetBtn.addEventListener("click", function () {
     sessionStorage.removeItem(TOKEN_KEY);
+    if (tokenInput) { tokenInput.value = ""; }
+    if (auditTimer) { clearInterval(auditTimer); auditTimer = null; }
+    auditAutoBox.checked = false;
+    setEmpty(auditEl, "未加载");
     setState("未鉴权", "unauthorized");
-    setBanner("已清除 sessionStorage 中的 token。", false);
+    setBanner("已清除 sessionStorage 中的 token，并停止审计自动刷新。", false);
     renderEmptyStates();
+  });
+  saveBtn.addEventListener("click", function () {
+    var value = tokenInput.value.trim();
+    if (value) {
+      sessionStorage.setItem(TOKEN_KEY, value);
+      tokenInput.value = "";
+      tokenInput.placeholder = "已保存 token（重新输入可替换）";
+    } else {
+      sessionStorage.removeItem(TOKEN_KEY);
+      tokenInput.placeholder = "Bearer token（来自 .env）";
+    }
+    refresh();
   });
 
   renderEmptyStates();
+  // 不在 DOM 里回填 token；已保存时只改 placeholder。
+  if (token()) { tokenInput.placeholder = "已保存 token（重新输入可替换）"; }
   refresh();          // 整页刷新，含审计区块（不并发的另一个 refreshAudit 会造成两次请求）
 })();
 </script>

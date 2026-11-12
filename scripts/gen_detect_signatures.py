@@ -1,8 +1,14 @@
-"""从 scrapfly/Antibot-Detector（MIT）的 detectors/*/*.json 重新生成特征表。
+"""把 scrapfly/Antibot-Detector（NPOSL-3.0）当**对照**，检查自有特征表与其差异。
 
 用法：
     python scripts/gen_detect_signatures.py D:\\参考项目\\Antibot-Detector [--commit <sha>]
     python scripts/gen_detect_signatures.py --check [D:\\参考项目\\Antibot-Detector]
+
+`--check` 分两段：
+  1. **本地完整性**（CI 也跑）：id 唯一、signal 形状/置信度合法、元数据 count 对得上、
+     动态头正则可编译。不依赖上游 checkout。
+  2. **上游新鲜度**（需要上游路径）：重新生成并逐项 diff。上游不在时打 SKIP + 待验证，
+     不把"没比对"说成"通过"。
 
 为什么单独做成脚本：特征表会随上游更新；把生成过程留痕，比手抄一份 JSON 更可维护，
 也避免"表是哪来的说不清"。
@@ -117,26 +123,126 @@ def _render_meta(rows: list[dict], commit: str) -> str:
 
 
 def _read_current_meta(source: str) -> dict:
-    """从 detect.py 源码里读出当前 SIGNATURES_SOURCE（生成器不 import solver）。"""
-    match = re.search(r"^SIGNATURES_SOURCE = \{(.*?)^\}", source, re.S | re.M)
-    if not match:
+    """从 detect.py 源码里读出当前 SIGNATURES_SOURCE（生成器不 import solver）。
+
+    用 `ast` 而不是正则：常量块里既有单/双引号，也有带逗号的句子；正则版会把
+    `"a, b"` 截断成 `"a`，双引号键更是直接读不到（当前文件就是双引号）。
+    """
+    import ast
+
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
         return {}
-    body = match.group(1)
-    meta: dict = {}
-    for key, val in re.findall(r"'(\w+)':\s*(.+?),", body):
-        val = val.strip()
-        if val.startswith(("'", '"')):
-            meta[key] = val.strip("'\"")
-        else:
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and any(
+                isinstance(t, ast.Name) and t.id == "SIGNATURES_SOURCE"
+                for t in node.targets):
             try:
-                meta[key] = int(val)
-            except ValueError:
-                meta[key] = val
-    return meta
+                value = ast.literal_eval(node.value)
+            except (ValueError, TypeError, SyntaxError):
+                return {}
+            return value if isinstance(value, dict) else {}
+    return {}
+
+
+def _local_problems(path: str = OUT) -> list[str]:
+    """校验**本地**特征表本身是否合法（不依赖上游 checkout）。
+
+    为什么需要：CI 里没有 `Antibot-Detector` 的 checkout，上游对照只能是 SKIP；
+    但"表是不是还被完整、没被手改坏"仍然可以查，而且必须查 —— 否则 CI 那一步
+    只是个永远绿的摆设。这里只读源码 + `ast`，不 import `solver.detect`。
+    """
+    import ast
+
+    try:
+        source = io.open(path, encoding="utf-8").read()
+    except OSError as e:
+        return [f"无法读取 {path}: {type(e).__name__}"]
+
+    problems: list[str] = []
+    try:
+        tree = ast.parse(source)
+    except SyntaxError as e:
+        return [f"detect.py 语法错误：line {e.lineno}: {e.msg}"]
+
+    rows = None
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and any(
+                isinstance(t, ast.Name) and t.id == "SIGNATURES" for t in node.targets):
+            try:
+                rows = ast.literal_eval(node.value)
+            except (ValueError, TypeError, SyntaxError) as e:
+                return [f"SIGNATURES 不是纯字面量表：{type(e).__name__}"]
+    if rows is None:
+        return ["缺 SIGNATURES 列表"]
+    if not isinstance(rows, list) or not rows:
+        return ["SIGNATURES 为空或不是列表"]
+
+    seen: set[str] = set()
+    for i, row in enumerate(rows):
+        where = f"第 {i + 1} 行"
+        if not isinstance(row, dict):
+            problems.append(f"{where} 不是对象")
+            continue
+        rid = row.get("id")
+        if not isinstance(rid, str) or not rid:
+            problems.append(f"{where} 缺 id")
+            continue
+        if rid in seen:
+            problems.append(f"id 重复：{rid}")
+        seen.add(rid)
+        for key in ("name", "category", "difficulty"):
+            if not isinstance(row.get(key), str) or not row[key]:
+                problems.append(f"{rid} 缺 {key}")
+        signals = row.get("signals")
+        if not isinstance(signals, list) or not signals:
+            problems.append(f"{rid} 没有 signals")
+            continue
+        for sig in signals:
+            if not isinstance(sig, (tuple, list)) or len(sig) != 3:
+                problems.append(f"{rid} 的 signal 形状不是 (kind, token, confidence)")
+                continue
+            kind, token, confidence = sig
+            if kind not in KINDS:
+                problems.append(f"{rid} 的 signal kind 非法：{kind!r}")
+            if not isinstance(token, str) or not token.strip():
+                problems.append(f"{rid} 的 signal token 为空")
+            if isinstance(confidence, bool) or not isinstance(confidence, int) \
+                    or not 0 <= confidence <= 100:
+                problems.append(f"{rid} 的 confidence 越界：{confidence!r}")
+
+    meta = _read_current_meta(source)
+    if not meta:
+        problems.append("detect.py 缺 SIGNATURES_SOURCE 常量")
+    else:
+        if meta.get("count") != len(rows):
+            problems.append(f"count={meta.get('count')} 与实际 {len(rows)} 不符")
+        if not meta.get("commit"):
+            problems.append("commit 为空")
+        for key in ("origin", "upstream_consulted", "generated_at"):
+            if not meta.get(key):
+                problems.append(f"SIGNATURES_SOURCE 缺 {key}")
+
+    # 动态头规则是 `re.compile(...)` 调用，literal_eval 取不到；单独把字面量参数抽出来编译。
+    for match in re.finditer(r"re\.compile\(\s*(r?['\"].*?['\"])\s*\)", source):
+        try:
+            re.compile(ast.literal_eval(match.group(1)))
+        except (ValueError, TypeError, re.error) as e:
+            problems.append(f"HEADER_REGEX_SIGNALS 正则非法：{type(e).__name__}")
+    return problems
 
 
 def _check(upstream: str | None) -> int:
-    """--check：重新生成并与当前表逐项比较。上游不在 → SKIP（不许静默通过）。"""
+    """`--check`：先验本地表合法性，再与上游逐项比较。
+
+    上游不在 → 本地校验通过后 SKIP + 待验证（不许把"没比对"说成"通过"）。
+    """
+    problems = _local_problems()
+    if problems:
+        print("不一致：本地特征表本身不合法——" + "；".join(problems))
+        return 1
+    print("本地一致：特征表合法，元数据完整。")
     if not upstream or not os.path.isdir(os.path.join(upstream, "detectors")):
         print(f"SKIP：上游目录不在或缺少 detectors/（{upstream or '未提供路径'}）——本次无法核对特征表新鲜度")
         print("SKIP：状态=待验证（CI 绿不等于表还是上游最新；请在有上游 checkout 的环境补跑）")
@@ -182,6 +288,9 @@ def main() -> int:
     args = sys.argv[1:]
     if args and args[0] == "--check":
         return _check(args[1] if len(args) > 1 else None)
+    write = "--write" in args
+    if write:
+        args.remove("--write")
     commit = "unknown"
     if "--commit" in args:
         idx = args.index("--commit")
@@ -191,6 +300,10 @@ def main() -> int:
         print(__doc__)
         return 2
     upstream = args[0]
+    if not write:
+        print("只对照，不写入：本表是自有整理，默认不覆盖。")
+        print("若确认要导入上游数据（NPOSL-3.0），显式加 --write 并先处理许可证。")
+        return _check(upstream)
     if not os.path.isdir(os.path.join(upstream, "detectors")):
         print(f"SKIP：上游目录不在或缺少 detectors/（{upstream}）——未写入任何内容；状态=待验证")
         return 0

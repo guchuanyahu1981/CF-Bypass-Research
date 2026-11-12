@@ -105,6 +105,11 @@ def process_metrics(*, platform_name: str | None = None) -> dict:
     return out
 
 
+def _label(value) -> str:
+    """Prometheus label 转义：反斜杠、双引号、换行。"""
+    return str(value).replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+
+
 def render_metrics_text(
     *,
     solves: int,
@@ -122,6 +127,7 @@ def render_metrics_text(
     host_stats_fn=None,
     research_fn=None,
     process_fn=None,
+    ratelimit_fn=None,
 ) -> str:
     """渲染 Prometheus 文本。只暴露计数与桶，不含任何域名/凭证。
 
@@ -150,6 +156,9 @@ def render_metrics_text(
         "# HELP cfsolve_rejected_total 准入拒绝次数",
         "# TYPE cfsolve_rejected_total counter",
         f"cfsolve_rejected_total {rejected_busy}",
+        "# HELP cfsolve_ratelimit_rejected_total 按域限流拒绝次数（--rate-per-host > 0 时）",
+        "# TYPE cfsolve_ratelimit_rejected_total counter",
+        "cfsolve_ratelimit_rejected_total_placeholder 0",
         "# HELP cfsolve_browser_restarts_total 浏览器重启次数",
         "# TYPE cfsolve_browser_restarts_total counter",
         f"cfsolve_browser_restarts_total {restarts}",
@@ -162,6 +171,22 @@ def render_metrics_text(
         "# HELP cfsolve_solve_seconds 求解耗时分布",
         "# TYPE cfsolve_solve_seconds histogram",
     ]
+    if ratelimit_fn is not None:
+        snap = ratelimit_fn() or {}
+        # 用同一个 family 的 total + 按域样本；total 用不带标签的样本，Prometheus 合法。
+        idx = next(i for i, line in enumerate(lines)
+                   if line.startswith("cfsolve_ratelimit_rejected_total_placeholder"))
+        block = [f"cfsolve_ratelimit_rejected_total {snap.get('total', 0)}"]
+        for row in snap.get("hosts", []):
+            block.append(
+                f'cfsolve_ratelimit_rejected_total{{host="{_label(row.get("host", ""))}"}} '
+                f'{int(row.get("rejected", 0))}'
+            )
+        lines[idx:idx + 1] = block
+    else:
+        lines = [l for l in lines
+                 if not l.startswith("cfsolve_ratelimit_rejected_total_placeholder")]
+
     cumulative = 0
     for edge, count in zip(LATENCY_BUCKETS, hist):
         cumulative += count
@@ -176,9 +201,9 @@ def render_metrics_text(
     ]
     for name in sorted(set(ok_map) | set(err_map)):
         if ok_map.get(name):
-            lines.append(f'cfsolve_backend_total{{backend="{name}",result="ok"}} {ok_map[name]}')
+            lines.append(f'cfsolve_backend_total{{backend="{_label(name)}",result="ok"}} {ok_map[name]}')
         if err_map.get(name):
-            lines.append(f'cfsolve_backend_total{{backend="{name}",result="error"}} {err_map[name]}')
+            lines.append(f'cfsolve_backend_total{{backend="{_label(name)}",result="error"}} {err_map[name]}')
 
     # 按域：只取 top-N，防止标签基数爆炸（域名是不可控输入，绝不能直接当标签用全量）
     if callable(host_stats_fn):
@@ -194,7 +219,7 @@ def render_metrics_text(
             for row in rows:
                 host = str(row.get("host") or "")
                 if host:
-                    lines.append(f'cfsolve_host_solves_total{{host="{host}"}} {int(row.get("solves") or 0)}')
+                    lines.append(f'cfsolve_host_solves_total{{host="{_label(host)}"}} {int(row.get("solves") or 0)}')
             lines += [
                 "# HELP cfsolve_host_failures_total 按域失败次数（仅 top-N）",
                 "# TYPE cfsolve_host_failures_total counter",
@@ -202,7 +227,7 @@ def render_metrics_text(
             for row in rows:
                 host = str(row.get("host") or "")
                 if host:
-                    lines.append(f'cfsolve_host_failures_total{{host="{host}"}} {int(row.get("failures") or 0)}')
+                    lines.append(f'cfsolve_host_failures_total{{host="{_label(host)}"}} {int(row.get("failures") or 0)}')
     lines.append(f"cfsolve_solve_seconds_count {solves}")
 
     # T-76：研究资产三条序列。让"没有样本/断言全在 skip"这件事**不可能被忘记**。

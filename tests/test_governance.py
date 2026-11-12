@@ -1066,3 +1066,195 @@ def test_detect_failure_is_audited(live_audit):
     rec = _detect_audits(audit)[-1]
     assert rec["ok"] is False and rec["error_code"] == "invalid-request"
     assert rec["stage"] == "validate"
+
+
+# ── v6.4.3：缓存键必须含 want（P1-07）──────────────
+def test_want_is_part_of_cache_key():
+    """clearance 与 awswaf 是两种形状，不能共用一条缓存。"""
+    s = svc.Solver(browser_factory=factory_returning(FakeBrowser()))
+    try:
+        assert s.cache_key("example.com") != s.cache_key("example.com", None, "awswaf")
+        assert s.cache_key("example.com", None, "awswaf") == s.cache_key("example.com", None, "AWSWAF")
+    finally:
+        s.close()
+
+
+def test_awswaf_does_not_hit_clearance_cache():
+    s = svc.Solver(browser_factory=factory_returning(FakeBrowser()))
+    try:
+        s.remember(HOST, clearance_out("C1"), want="clearance")
+        assert s.cache_lookup(HOST, want="clearance") is not None
+        assert s.cache_lookup(HOST, want="awswaf") is None, "awswaf 不得命中 clearance 缓存"
+
+        aws = {
+        "ok": True, "solved": True, "aws_waf_token": "A1", "user_agent": "UA/1.0",
+        "expires_at": time.time() + 300, "want": "awswaf", "egress_id": "default",
+        }
+        s.remember(HOST, aws, want="awswaf")
+        assert s.cache_lookup(HOST, want="clearance")["cf_clearance"] == "C1"
+        assert s.cache_lookup(HOST, want="awswaf")["aws_waf_token"] == "A1"
+    finally:
+        s.close()
+
+
+def test_router_does_not_serve_clearance_for_awswaf():
+    """端到端钉住调用点：BackendRouter 也必须把 want 传进治理层。"""
+    s = make_solver()
+    try:
+        s.remember(HOST, clearance_out("C1"), want="clearance")
+        aws_out = {
+            "ok": True, "solved": True, "aws_waf_token": "A1", "user_agent": "UA/1.0",
+            "expires_at": time.time() + 300, "want": "awswaf", "egress_id": "default",
+        }
+        fake = FakeBackend(out=aws_out)
+        router = be.BackendRouter([fake], governance=s)
+        out = router.solve(HOST, timeout=10, want="awswaf")
+        assert fake.calls == 1, "awswaf 不得命中 clearance 缓存"
+        assert out.get("aws_waf_token") == "A1"
+    finally:
+        s.close()
+
+
+# ── v6.4.3：缓存 IO 坏了也不能把一次成功求解变成 500（P2-16）──
+class _FlakyStore:
+    """get/set 抛错，其余委托给 MemoryStore；记录 claim 释放。"""
+
+    def __init__(self):
+        self.inner = cache_mod.MemoryStore()
+        self.released: list[str] = []
+
+    def get(self, key):
+        raise OSError("disk full")
+
+    def set(self, *args, **kwargs):
+        raise OSError("disk full")
+
+    def try_claim(self, key, ttl):
+        return True
+
+    def release_claim(self, key):
+        self.released.append(key)
+
+    def __getattr__(self, name):
+        return getattr(self.inner, name)
+
+
+def test_solve_survives_broken_cache_store():
+    store = _FlakyStore()
+    s = make_solver(store=store)
+    try:
+        out = s.solve(HOST, timeout=10)
+        assert out["ok"] is True and out["solved"] is True, out
+        assert out["cached"] is False
+        assert store.released, "落盘失败也必须释放 claim，否则对端白等 TTL"
+    finally:
+        s.close()
+
+
+def test_router_busy_is_counted_in_rejected_busy():
+    """路由侧准入拒绝也要进 rejected_busy（P3-23）。"""
+    s = make_solver()
+    try:
+        # 占满 inflight 门票，让路由侧的 begin_backend_call 必然失败
+        while s.begin_backend_call():
+            pass
+        before = s._rejected_busy
+        fake = FakeBackend()
+        router = be.BackendRouter([fake], governance=s)
+        with pytest.raises(SolveError) as ei:
+            router.solve(HOST, timeout=10)
+        assert ei.value.code is ErrorCode.BUSY
+        assert s._rejected_busy == before + 1
+    finally:
+        s.close()
+
+
+def test_cache_lookup_normalizes_want_case():
+    """回归：key 用小写、比较用原串会让 want="AWSWAF" 永久 miss。"""
+    s = svc.Solver(browser_factory=factory_returning(FakeBrowser()))
+    try:
+        aws = {
+        "ok": True, "solved": True, "aws_waf_token": "A1", "user_agent": "UA/1.0",
+        "expires_at": time.time() + 300, "want": "awswaf", "egress_id": "default",
+        }
+        s.remember(HOST, aws, want="awswaf")
+        hit = s.cache_lookup(HOST, want="AWSWAF")
+        assert hit is not None and hit["aws_waf_token"] == "A1"
+    finally:
+        s.close()
+
+
+def test_wait_for_peer_rejects_mismatched_want():
+    s = svc.Solver(browser_factory=factory_returning(FakeBrowser()))
+    try:
+        key = s.cache_key("example.com", None, "awswaf")
+        bad = clearance_out("C1")          # want 默认 clearance
+        s._store.set(key, bad, host="example.com", backend="fake")
+        assert s._wait_for_peer(key, 1.0, want="awswaf") is None
+    finally:
+        s.close()
+
+
+def test_remember_rejects_mismatched_want():
+    s = svc.Solver(browser_factory=factory_returning(FakeBrowser()))
+    try:
+        bad = clearance_out("C1")
+        bad["want"] = "clearance"
+        s.remember(HOST, bad, want="awswaf")
+        assert s.cache_lookup(HOST, want="awswaf") is None, "错配产物污染了 awswaf 键"
+    finally:
+        s.close()
+
+
+def test_cache_remaining_is_per_want():
+    s = svc.Solver(browser_factory=factory_returning(FakeBrowser()))
+    try:
+        aws = {"ok": True, "solved": True, "aws_waf_token": "A1", "user_agent": "UA/1.0",
+           "expires_at": time.time() + 300, "want": "awswaf", "egress_id": "default"}
+        s.remember(HOST, aws, want="awswaf")
+        assert s.cache_remaining(HOST, want="awswaf") > 0
+        assert s.cache_remaining(HOST, want="clearance") == -1.0
+    finally:
+        s.close()
+
+
+def test_router_rejects_backend_result_missing_want_field():
+    """后端返回 solved:true 但没有对应产物 → 不得当成功返回/缓存。"""
+    s = make_solver()
+    try:
+        fake = FakeBackend(out=clearance_out("C1"))       # 只有 cf_clearance
+        router = be.BackendRouter([fake], governance=s)
+        with pytest.raises(SolveError) as ei:
+            router.solve(HOST, timeout=10, want="awswaf")
+        assert ei.value.code is ErrorCode.UNSOLVED
+    finally:
+        s.close()
+
+
+def test_corrupt_cache_entry_is_a_miss_not_500():
+    s = svc.Solver(browser_factory=factory_returning(FakeBrowser()))
+    key = s.cache_key("example.com")
+    s._store.set(key, {"expires_at": "not-a-number", "want": "clearance"}, host="example.com")
+    assert s.cache_lookup(HOST) is None
+    s._store.set(key, {"expires_at": time.time() + 60, "want": "clearance"}, host="example.com")
+    assert s.cache_lookup(HOST) is not None
+    s._store.set(key, "not-a-dict", host="example.com")
+    assert s.cache_lookup(HOST) is None
+
+
+def test_remember_refuses_one_shot_token_wants():
+    s = svc.Solver(browser_factory=factory_returning(FakeBrowser()))
+    try:
+        s.remember(HOST, {"token": "T", "expires_at": time.time() + 60, "want": "turnstile"},
+               want="turnstile")
+        assert s.cache_lookup(HOST, want="turnstile") is None
+
+
+    # 复审 P2：新建 Solver 的用例统一 close，避免线程/资源泄漏。
+    finally:
+        s.close()
+
+
+def _closed_solver():
+    s = svc.Solver(browser_factory=factory_returning(FakeBrowser()))
+    return s

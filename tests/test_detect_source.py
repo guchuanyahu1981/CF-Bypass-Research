@@ -24,10 +24,12 @@ GEN = ROOT / "scripts" / "gen_detect_signatures.py"
 def test_signatures_source_recorded():
     meta = getattr(detect, "SIGNATURES_SOURCE", None)
     assert isinstance(meta, dict), "detect.py 必须有 SIGNATURES_SOURCE 常量（特征表从哪生成的说不清=新鲜度不可判断）"
-    for key in ("repo", "commit", "generated_at", "count"):
+    for key in ("origin", "upstream_consulted", "commit", "generated_at", "count"):
         assert key in meta, f"SIGNATURES_SOURCE 缺 {key}"
-    assert "Antibot-Detector" in meta["repo"], "repo 应指向上游 scrapfly/Antibot-Detector"
-    assert meta["commit"], "commit 不可为空（未知也必须是 'unknown'，不能撒谎成假 sha）"
+    assert "own-curated" in meta["origin"], "origin 必须声明本表是自有整理（不是上游数据）"
+    assert "Antibot-Detector" in meta["upstream_consulted"], "upstream_consulted 应记录对照来源"
+    assert "NPOSL-3.0" in meta["upstream_consulted"], "必须写明上游是 NPOSL-3.0，不能冒充 MIT"
+    assert meta["commit"], "commit 不可为空（未知也必须是 'n/a'，不能撒谎成假 sha）"
     assert meta["generated_at"], "generated_at 不可为空"
     assert meta["count"] == len(detect.SIGNATURES), (
         f"count={meta['count']} 与表长 {len(detect.SIGNATURES)} 不一致——元数据说谎比没有更糟"
@@ -107,3 +109,52 @@ def test_gen_check_without_path_is_skip_not_pass():
     """--check 不带上游路径：同样必须 SKIP + 待验证，不能当「检查通过」混过去。"""
     rc, out = _run_gen("--check")
     assert rc == 0 and "SKIP" in out and "待验证" in out, f"输出：{out}"
+
+
+# ── 4. 本地表自检：CI 没有上游 checkout 时也有东西可守 ──
+def _load_gen():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("gen_detect_signatures", GEN)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["gen_detect_signatures"] = mod
+    spec.loader.exec_module(mod)  # type: ignore[union-attr]
+    return mod
+
+
+def test_local_problems_accepts_current_table():
+    gen = _load_gen()
+    assert gen._local_problems() == [], gen._local_problems()
+
+
+DETECT = ROOT / "solver" / "detect.py"
+
+
+def test_local_problems_flags_duplicate_ids_and_bad_confidence(tmp_path):
+    gen = _load_gen()
+    source = DETECT.read_text(encoding="utf-8")
+    broken = source.replace("'id': 'detect-aws-waf'", "'id': 'detect-akamai'", 1)
+    broken = broken.replace("('cookie', '_abck', 100)", "('cookie', '_abck', 180)", 1)
+    path = tmp_path / "detect.py"
+    path.write_text(broken, encoding="utf-8", newline="\n")
+    problems = gen._local_problems(str(path))
+    assert any("id 重复" in p for p in problems), problems
+    assert any("confidence 越界" in p for p in problems), problems
+
+
+def test_local_problems_flags_metadata_count_and_bad_regex(tmp_path):
+    gen = _load_gen()
+    source = DETECT.read_text(encoding="utf-8")
+    broken = source.replace('"count": 34,', '"count": 33,', 1)
+    broken = broken.replace(r'^x-[a-z0-9]{8}-[a-d]$', r'^x-[a-z', 1)
+    path = tmp_path / "detect.py"
+    path.write_text(broken, encoding="utf-8", newline="\n")
+    problems = gen._local_problems(str(path))
+    assert any("count=33" in p for p in problems), problems
+    assert any("正则非法" in p for p in problems), problems
+
+
+def test_check_runs_local_integrity_before_skip():
+    """上游缺失时也必须先打「本地一致」——本地校验不是被 SKIP 跳过的附赠品。"""
+    rc, out = _run_gen("--check")
+    assert rc == 0 and "本地一致" in out, out

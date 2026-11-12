@@ -7,9 +7,9 @@
 
 | 层 | 数量 | 命令 | 最近结果 |
 |---|---|---|---|
-| Python 用例 | **1066** | `python -m pytest tests/ -q` | 1058 passed + 8 skipped（2026-11-11 复跑；本机装了 cloakbrowser，缺失依赖场景转 skip） |
-| Python 覆盖率 | **89.93%**（`solver/` 整体；`captchas/` 整体 22.21%，逐模块门禁见 `docs/coverage-policy.json`） | `... --cov=solver --cov=captchas --cov-report=json:coverage.json` + `node scripts/check-coverage.mjs` | 65 个模块门槛全通过（2026-11-11 复跑） |
-| Go 用例 | **52 个 Test** | `cd gocfsolve && go test -count=1 -race ./...` | 全部 PASS（2026-11-11 复跑） |
+| Python 用例 | **1237** | `python -m pytest tests/ -q` | 1229 passed + 8 skipped（2026-11-12 复跑；本机装了 cloakbrowser，缺失依赖场景转 skip） |
+| Python 覆盖率 | **90.53%**（`solver/` 整体；`captchas/` 整体 27.20%，逐模块门禁见 `docs/coverage-policy.json`） | `... --cov=solver --cov=captchas --cov-report=json:coverage.json` + `node scripts/check-coverage.mjs` | 68 个模块门槛全通过（2026-11-12 复跑） |
+| Go 用例 | **57 个 Test** | `cd gocfsolve && go test -count=1 -race ./...` | 全部 PASS（2026-11-11 复跑） |
 | Go 静态检查 | — | `cd gocfsolve && go vet ./...` | 无输出 |
 | 结论库校验 | **54 条** | `node scripts/validate-findings.mjs` | exit 0 |
 | E2E 冒烟 | 3 个断言 | `.\run.ps1 smoke` | ✅ |

@@ -108,7 +108,8 @@ $TOKEN = (Select-String -Path .env -Pattern '^CF_SOLVE_TOKEN=(.+)$').Matches[0].
   剩余寿命短于 30 秒的凭证**不会被返回**（会直接报 `unsolved`），避免客户端拿到静默 403 的死凭证。
 - `cached: true` 时 `elapsed` 恒为 `0.0`（表示本次没有求解动作）；不要把它当成"上次求解耗时"。
 - `egress_id` 是本次求解用的**出口标识**（有代理池时是"该域粘住的那个出口"），也是缓存键的一部分。
-  缓存键 = 域名 + 出口标识（**UA 不进键**）。理由：缓存里存的是成对的「cookie + 当时的 UA」，
+  缓存键 = 域名 + 出口标识 + 产物类型（`want`；**UA 不进键**）。v6.4.3 把 `want` 加进键，
+  升级后旧键不可达，第一次请求会冷解一次（一次性成本，不是故障）。理由：缓存里存的是成对的「cookie + 当时的 UA」，
   回放时客户端用的就是这对值，所以旧 UA 的凭证配旧 UA 依然自洽；把 UA 放进键反而会让
   跨进程共享归零。真错了（站点也校验 UA）会以 403 暴露给客户端，由自愈逻辑重解。
 
@@ -198,17 +199,17 @@ $TOKEN = (Select-String -Path .env -Pattern '^CF_SOLVE_TOKEN=(.+)$').Matches[0].
 
 | `error_code` | HTTP | `stage` | 含义与建议动作 |
 |---|---|---|---|
-| `invalid-request` | 400 | `validate` | url/timeout/force/body 不合法，**或页面重定向/子资源请求了私网地址被拦**；按 `hint` 修参数 |
+| `invalid-request` | 400 | `validate` | url/timeout/force/body 不合法；**浏览器/probe 路径**的重定向/子资源请求了私网地址也会被拦。pydoll/cfsolve/FlareSolverr 只校验入口 URL（它们自己跟随 302），见 `docs/项目规格.md` §7 L11 |
 | `payload-too-large` | 413 | `validate` | **v5.0 新增**：请求体超过上限 **65536 字节**（编译期常量，没有可调启动参数）。与 400 的区别：400=请求坏了**不该**重试，413=可减小请求体后**重试**（如拆分 URL 列表）。连接会被服务端主动关闭 |
 | `unauthorized` | 401 | `admit` | 缺 token 或 token 错；检查 `.env` |
 | `busy` | 429 | `admit` | 队列满 / inflight 满；降低并发或加进程 |
 | `not-found` | 404 | `admit` | **v6.4 新增**：路径不存在。只在**已鉴权之后**才可能出现 —— 未带 token 时一律 401，不泄露"这个路径存不存在"。可用路径见本文目录 |
 | `method-not-allowed` | 405 | `admit` | **v6.4 新增**：该路径不支持这个方法，响应头带 `Allow`。此前是 501 + `text/html`（与"非 2xx 一律 JSON"的契约冲突，按契约解析的客户端会直接抛错） |
-| `rate-limited` | 429 | `admit` | 同域求解过频（预留，默认未启用） |
+| `rate-limited` | 429 | `admit` | 同域求解过频；默认 `--rate-per-host 1/30`（同站约 30s 一次），`0` 可关闭。缓存命中不消耗令牌。**桶是进程内的**：N 个 worker 各自一份，实际同站频率约为 N×；需要全局限流时要放在网关/代理池层 |
 | `unsolved` | **200** | `wait` | 浏览器跑完但没拿到 clearance；换站验证服务本身、或该域已升级 |
 | `timeout` | 504 | `wait` | 超过预算；调大 `timeout`（≤120）或降并发 |
 | `transport` | 502 | `navigate` | 网络层失败（DNS/连接/TLS） |
-| `browser-unavailable` | 503 | `admit` | 浏览器启动失败或中途断开；看 `/health` 的 `last_error` |
+| `browser-unavailable` | 503 | `admit` | 浏览器启动失败/中途断开/正在关闭时排在队列里的任务被清出；看 `/health` 的 `last_error`。语义=稍后重试（区别于 `internal` 500=不要重试） |
 | `not-configured` | 503 | `admit` | 依赖未就绪：未安装 camoufox（`pip install camoufox && python -m camoufox fetch`）；嫁接层还需 `cloakbrowser` 已安装**且已 `cloakbrowser login`**（二进制按需下载） |
 | `internal` | 500 | `internal` | 未预期异常；看服务端 traceback |
 
@@ -308,7 +309,7 @@ curl -s -X POST http://127.0.0.1:8878/solve \
 它们与主链路的同名能力是**两套实现**（CloakBrowser vs Camoufox/pydoll/cfsolve）。
 
 `ua_fingerprint` 是**当前浏览器 UA 的 sha256 前 12 位**（不是 UA 本体），纯观测字段：
-UA **不在缓存键里**，所以两个进程这个值不同**照样共享缓存**（键是 `host|egress`）。
+UA **不在缓存键里**，所以两个进程这个值不同**照样共享缓存**（键是 `host|egress|want`）。
 它不同只说明两边的浏览器指纹不同 —— 若目标站严格校验 UA，命中旧凭证会以 403 暴露，
 此时用 `GetFresh` 强制重解即可。
 
@@ -578,7 +579,7 @@ YesCaptcha 的协议里没有 `route` 字段，所以兼容层一律按 `fixed` 
 
 ### 生命周期与上限（防止把兼容层变成资源泄漏）
 
-- 结果保留 **10 分钟**（`COMPAT_TASK_TTL`，**从任务完成时刻起算**，不是从创建时刻），过期后 `getTaskResult` 返回 `ERROR_TASK_ID_INVALID`；
+- 结果保留 **10 分钟**（`COMPAT_TASK_TTL`，**从任务完成时刻起算**，不是从创建时刻），过期后 `getTaskResult` 返回 `ERROR_NO_SUCH_CAPCHA_ID`；
 - 待处理任务上限默认 **64**（`--compat-max-pending`），满了立刻 `ERROR_NO_SLOT_AVAILABLE`；
 - 每个任务跑在守护线程里，进程退出不会挂在上面；`POST /shutdown` 的优雅退出照常生效。
 

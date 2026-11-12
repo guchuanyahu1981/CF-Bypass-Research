@@ -62,6 +62,8 @@ const RULES = [
   { key: "version", file: "docker-compose.yml", re: /image:\s*cf-bypass-solver:(\d+\.\d+\.\d+)/, group: 1 },
   { key: "version", file: "Dockerfile", re: /cf-bypass-solver:(\d+\.\d+\.\d+)/, group: 1 },
   { key: "version", file: "CHANGELOG.md", re: /^## \[(\d+\.\d+\.\d+)\]/m, group: 1 },
+  // 规格自称“冲突以我为准”，它自己的版本行必须跟事实源一致。
+  { key: "version", file: "docs/项目规格.md", re: /^>\s*版本：v?(\d+\.\d+\.\d+)/m, group: 1 },
   // v6.4 A1：模块级指标进事实源。此前 `engines.py 覆盖率 57%` 与 `service.py 2073 行`
   // 这两个数字**没有任何东西守着**，实测分别是 100% 与 2994 行 —— 漂了一整轮没被发现。
   // 键名用点分路径（`module_coverage.<模块>`）指向嵌套对象，见 factAt()。
@@ -136,7 +138,6 @@ function run(cmd, args, cwd = ROOT) {
 
 function measure() {
   const measured = {};
-  let ranPytest = false;
 
   if (!NO_TEST_RUN) {
     // 一次 --collect-only 数用例：不跑函数体，比全跑快一个数量级。
@@ -144,7 +145,6 @@ function measure() {
       const out = run("python", ["-m", "pytest", "tests/", "-q", "--collect-only"]);
       const m = out.match(/(\d+)\s+tests?\s+collected/) ?? out.match(/collected\s+(\d+)/);
       if (m) measured.python_tests = Number(m[1]);
-      ranPytest = true;
     } catch (e) {
       problem("measure", `pytest --collect-only 失败（无法核实用例数）：${(e.message ?? "").slice(0, 200)}`);
     }
@@ -201,8 +201,9 @@ function measure() {
     }
   }
 
-  if (!ranPytest && !NO_TEST_RUN && !measured.python_tests) {
-    // pytest --collect-only 没给出数字（输出格式变化）：同样要显式记"未测量"
+  if (!NO_TEST_RUN && !measured.python_tests) {
+    // pytest --collect-only 没给出数字（输出格式变化/被替换成别的解释器）：必须显式记"未测量"。
+    // 旧条件还要求 `!ranPytest`，于是"跑了但没解析出数字"会静默跳过 —— 门禁假绿。
     unmeasured.push("python_tests");
   }
 

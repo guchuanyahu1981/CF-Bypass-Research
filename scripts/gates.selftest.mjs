@@ -86,13 +86,17 @@ function sourceFileOfLines(lines) {
   return `${Array.from({ length: lines }, (_, i) => `x${i} = ${i}`).join("\n")}\n`;
 }
 
-function docsTree(overrides = {}) {
+function docsTree(overrides = {}, specVersion = null) {
   const facts = { ...DOCS_FACTS, ...overrides };
+  const sv = specVersion ?? facts.version;
   return makeTree({
     "docs/facts.json": JSON.stringify(facts, null, 2),
     "docs/findings.json": JSON.stringify({ findings: [{ id: "F-001" }, { id: "F-002" }] }),
     "solver/service.py": sourceFileOfLines(facts.service_py_lines),
     "docs/项目规格.md":
+      `> 版本：v${sv} · 更新：2026-01-01
+
+` +
       "| L6 | `engines.py` 覆盖率 **100%**（x） | y | z |\n" +
       `| L7 | \`service.py\` 仍 **${facts.service_py_lines} 行**（x） | y | z |\n`,
     "README.md": "跑测试：pytest tests/    # 100 项 Python 测试\n",
@@ -164,6 +168,14 @@ function selftestDocs() {
     { code: 1, contains: "facts.json" },
   );
   rmSync(noFacts, { recursive: true, force: true });
+
+  const specVersionDrift = docsTree({ version: "9.9.8" }, "9.9.9");
+  expect(
+    "规格版本行与事实源不一致 → 红（v6.4.3 新增锚点）",
+    runGate("validate-docs.mjs", [`--root=${specVersionDrift}`, "--no-test-run"]),
+    { code: 1, contains: "docs/项目规格.md" },
+  );
+  rmSync(specVersionDrift, { recursive: true, force: true });
 }
 
 // ── validate-openapi ─────────────────────────────────────
@@ -208,8 +220,24 @@ function openapiPaths() {
   };
 }
 
-function openapiTree({ version = "9.9.9", paths = openapiPaths() } = {}) {
+function goStruct(fields) {
+  return "type Clearance struct {\n" + fields.map((f) => `  X string \`json:"${f}"\``).join("\n") + "\n}\n";
+}
+
+function openapiTree({ version = "9.9.9", paths = openapiPaths(), security = [{ bearerAuth: [] }], goFields = ["cf_clearance"], schemaFields = ["cf_clearance"] } = {}) {
+  const spec = {
+    openapi: "3.0.3",
+    info: { title: "t", version },
+    components: {
+      securitySchemes: { bearerAuth: { type: "http", scheme: "bearer" } },
+      schemas: { SolveResponse: { type: "object", properties: Object.fromEntries(schemaFields.map((f) => [f, { type: "string" }])) } },
+    },
+    paths,
+  };
+  // null 表示“故意删掉顶层 security”，用来测门禁能不能发现。
+  if (security !== null) spec.security = security;
   return makeTree({
+    "gocfsolve/cfsolve.go": goStruct(goFields),
     "solver/service.py": OPENAPI_SOURCE,
     // v6.4 C4：门禁还会核对"规格里的非 2xx 响应码 ⊆ STATUS_BY_CODE"，
     // 所以最小树必须有一份能被提取的 errors.py（低于 8 个码会被判成"提取规则失效"）。
@@ -217,13 +245,7 @@ function openapiTree({ version = "9.9.9", paths = openapiPaths() } = {}) {
       .map((code) => `    CODE_${code}: ${code},`)
       .join("\n")}\n}\n`,
     "docs/facts.json": JSON.stringify({ version: "9.9.9" }),
-    "docs/openapi.json": JSON.stringify({
-      openapi: "3.0.3",
-      info: { title: "t", version },
-      components: { securitySchemes: { bearerAuth: { type: "http", scheme: "bearer" } } },
-      security: [{ bearerAuth: [] }],
-      paths,
-    }),
+    "docs/openapi.json": JSON.stringify(spec),
   });
 }
 
@@ -272,6 +294,24 @@ function selftestOpenapi() {
     { code: 1, contains: "418" },
   );
   rmSync(t4, { recursive: true, force: true });
+
+  // v6.4.3 的新规则：顶层 security 是“未显式覆盖的操作”的默认鉴权，
+  // 删掉它后规则 2 的逐操作检查看不到任何异常，必须在顶层就判红。
+  const t5 = openapiTree({ security: null });
+  expect(
+    "顶层 security 被删 → 红",
+    runGate("validate-openapi.mjs", [`--root=${t5}`]),
+    { code: 1, contains: "security" },
+  );
+  rmSync(t5, { recursive: true, force: true });
+
+  const t6 = openapiTree({ goFields: ["cf_clearance", "missing_field"], schemaFields: ["cf_clearance"] });
+  expect(
+    "Go 客户端读取的字段未进 SolveResponse → 红",
+    runGate("validate-openapi.mjs", [`--root=${t6}`]),
+    { code: 1, contains: "missing_field" },
+  );
+  rmSync(t6, { recursive: true, force: true });
 }
 
 // ── validate-findings ────────────────────────────────────

@@ -27,10 +27,17 @@ TOKENS_CSS = """  :root {
          font:14px/1.55 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif; }
   :focus-visible { outline:2px solid var(--accent); outline-offset:2px; border-radius:4px; }
   button { transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
+  /* token 输入与「保存」必须作为一个整体换行：窄屏上两者被拆到两行时，
+     用户看不出哪个按钮作用于哪个输入。 */
+  .token-group { display:flex; align-items:center; gap:8px; flex:0 1 auto; min-width:0; }
+  .token-field { display:flex; align-items:center; gap:6px; flex:1 1 auto; min-width:0; }
+  .token-label { font-size:12px; color:var(--muted); white-space:nowrap; }
+  .token-field input { flex:1 1 auto; width:220px; min-width:0; }
   @media (max-width: 480px) {
     body { padding:12px; }
     header { gap:8px; }
-    input[type=password], input[type=text] { min-width:0; max-width:100%; }
+    .token-label { display:none; }
+    .token-field input { width:100%; }
     #audit, #inflight-table { overflow-x:auto; }
   }
   @media (prefers-reduced-motion: reduce) {

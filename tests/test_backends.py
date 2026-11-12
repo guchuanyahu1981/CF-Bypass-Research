@@ -693,3 +693,44 @@ def test_flaresolverr_rejects_new_work_after_close():
     finally:
         srv.shutdown()
         srv.server_close()
+
+
+def test_flaresolverr_rejects_non_clearance_want_without_calling_upstream():
+    """FlareSolverr 只做 clearance；turnstile/awswaf 必须显式拒绝，不能返回错产物。"""
+    called = []
+
+    def handler(body):
+        called.append(body)
+        return 200, FLARE_OK
+
+    srv, base = _serve(handler)
+    try:
+        with pytest.raises(SolveError) as ei:
+            be.FlareSolverrBackend(base, session="s1").solve(
+                "https://e.com/", 30, want="turnstile"
+            )
+        assert ei.value.code is ErrorCode.NOT_CONFIGURED
+        assert called == [], "不支持的 want 不该发 upstream 请求"
+    finally:
+        srv.shutdown()
+        srv.server_close()
+
+
+def test_backend_default_ttl_is_honored():
+    """`--ttl` 必须传给所有后端，不能只有 camoufox 生效（P3-19）。"""
+    from cfsolve_backend import CfsolveBackend
+    from pydoll_backend import PydollBackend
+
+    assert CfsolveBackend("x", "y", default_ttl=300).default_ttl == 300
+    assert PydollBackend(default_ttl=300).default_ttl == 300
+    assert be.FlareSolverrBackend("http://x:1", default_ttl=300).default_ttl == 300
+
+
+def test_cfsolve_rejects_want_it_cannot_produce():
+    """cfsolve 只产出 clearance/turnstile/recaptcha_v3；不能把 clearance 当 awswaf。"""
+    from cfsolve_backend import CfsolveBackend
+
+    b = CfsolveBackend("does-not-exist", "does-not-exist.json")
+    with pytest.raises(SolveError) as ei:
+        b.solve("https://e.com/", 10, want="awswaf")
+    assert ei.value.code is ErrorCode.NOT_CONFIGURED

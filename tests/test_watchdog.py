@@ -145,3 +145,32 @@ def test_wedge_restart_default_off_in_library(monkeypatch):
         assert s.wedge_restart is False
     finally:
         s.close()
+
+
+# ── v6.4.3（P2-17）：首次成功后的重启挂起也必须进 wedged ──
+# 旧实现给启动阶段加了 `not ever_alive` 前置；_ever_alive 一旦置 True 就不再复位，
+# 于是“首次成功 → 浏览器断开 → 重启挂起”永远不进 wedged。
+from service import _wedge_reason  # noqa: E402
+
+
+def test_restart_hang_after_first_success_is_detected():
+    reason = _wedge_reason(now=1000.0, deadline=0.0, desc="", launch_at=600.0,
+                           launch_grace=300.0)
+    assert reason and "启动/重启" in reason
+
+
+def test_normal_launch_window_is_not_wedged():
+    assert _wedge_reason(now=699.0, deadline=0.0, desc="", launch_at=600.0,
+                         launch_grace=300.0) == ""
+
+
+def test_task_deadline_takes_precedence():
+    reason = _wedge_reason(now=1000.0, deadline=900.0, desc="solve", launch_at=0.0,
+                           launch_grace=300.0)
+    assert reason and "任务超期" in reason
+
+
+def test_cleared_launch_timer_never_wedges_healthy_worker():
+    """启动成功后 `_launch_started_at` 清零：运行再久也不能被判成启动卡死。"""
+    assert _wedge_reason(now=10**9, deadline=0.0, desc="", launch_at=0.0,
+                         launch_grace=300.0) == ""

@@ -125,7 +125,7 @@ COMPAT_ERROR_BY_CODE: dict[ErrorCode, str] = {
 # ── 错误码（v6.2：对齐 YesCaptcha 生态的真实词表）──
 #
 # 为什么要改：v5.0.1 用的是我们自造的词（ERROR_TASK_TYPE_NOT_SUPPORTED /
-# ERROR_TASK_PARAM_INVALID / ERROR_TASK_ID_INVALID）。按 YesCaptcha 协议写死的客户端
+# ERROR_TASK_PARAM_INVALID / ERROR_NO_SUCH_CAPCHA_ID）。按 YesCaptcha 协议写死的客户端
 # 是**按 errorCode 分支**的，改 base_url 过来后这三类错误全部落进 default 分支 ——
 # 兼容层"能连上但错误处理全错"，比连不上更坏。
 # 现在的词表取自生态实际用法（对照 ohmycaptcha 的实现与 YesCaptcha 文档）：
@@ -314,12 +314,16 @@ def _solution_from_mc_result(mc_type: str, result: dict) -> dict:
     if mc_type in _MC_COOKIE_TYPES:
         cookies = result.get("cookies")
         if not isinstance(cookies, dict) or not cookies:
-            # 有的求解器只在顶层给单个 cookie（cf_clearance / _px3 / datadome …）
+            # 有的求解器只在顶层给单个 cookie。注意 datadome 的真实字段是
+            # `datadome_cookie`（captchas/datadome/solve.py:115），不是 `datadome`；
+            # 旧映射漏了它 → solution.cookies 为空但 success=true。
+            aliases = {"datadome_cookie": "datadome"}
             cookies = {}
             for key, value in result.items():
-                if isinstance(value, str) and value and key in (
+                name = aliases.get(key, key)
+                if isinstance(value, str) and value and name in (
                         "cf_clearance", "_px3", "_abck", "datadome", "aws-waf-token"):
-                    cookies[key] = value
+                    cookies[name] = value
         return {"cookies": dict(cookies), "userAgent": ua}
     if mc_type in _MC_TOKEN_AS_GRECAPTCHA:
         return {"gRecaptchaResponse": str(token or ""), "userAgent": ua}
@@ -399,7 +403,7 @@ class TaskRegistry:
         return record
 
     def result(self, task_id: str) -> CompatTask:
-        """查任务。不存在/已过期 → `ERROR_TASK_ID_INVALID`。"""
+        """查任务。不存在/已过期 → `ERROR_NO_SUCH_CAPCHA_ID`。"""
         if not isinstance(task_id, str) or not task_id:
             raise CompatError(ERR_PROPERTY_EMPTY, "taskId 必须是非空字符串")
         with self._lock:
@@ -436,7 +440,7 @@ class TaskRegistry:
     def _purge_locked(self) -> None:
         now = time.time()
         # 只清**已完成**且超时的：把还在跑的记录清掉，客户端会从 processing
-        # 直接跳到 ERROR_TASK_ID_INVALID。
+        # 直接跳到 ERROR_NO_SUCH_CAPCHA_ID。
         # 保留期从**完成时刻**算（max(created_at, finished_at)），不是从创建时刻算：
         # 否则一个跑了很久的求解（真机 16–20s、超时上限 45s）刚出结果就可能被立刻清掉，
         # 调用方第一个 getTaskResult 就拿到 TASK_ID_INVALID —— 与文档承诺的

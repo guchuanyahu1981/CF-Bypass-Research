@@ -6,9 +6,11 @@
   · 现在有四条路（纯协议 / Camoufox / pydoll / FlareSolverr），
     **先知道对面是什么，才不会把最贵的操作浪费在错的目标上**。
 
-规则来源：`scrapfly/Antibot-Detector`（MIT）的 `detectors/*/*.json` 里的**字面**特征
-（cookie 名 / header / url / 文本）与置信度。用
-`python scripts/gen_detect_signatures.py <Antibot-Detector 路径>` 可重新生成下表。
+规则来源：本表是**自有整理的事实性信号**（cookie 名 / header 名 / URL 片段 / 响应文本），
+取自公开厂商文档与本项目实际观测到的响应；上游 `scrapfly/Antibot-Detector`
+（**NPOSL-3.0**，不是 MIT）仅作交叉核对，**不复制其代码或数据文件**。
+`scripts/gen_detect_signatures.py` 只做“上游 vs 本表”的差异对照；加 `--write` 才会覆盖本表，
+且默认不写（避免把 NPOSL 数据直接导入 MIT 仓库）。
 
 与上游的差别（我们只做服务端能做的事）：
   · 上游是浏览器扩展，能看 DOM / JS hook / window 属性；服务端只能看 HTTP 响应
@@ -22,6 +24,7 @@
 
 from __future__ import annotations
 
+import fnmatch
 import re
 from dataclasses import dataclass, field
 
@@ -31,17 +34,19 @@ except ImportError:  # 直接以脚本运行
     import vendors as _vendors  # type: ignore[no-redef]
 
 SIGNATURES_SOURCE = {
-    "repo": "scrapfly/Antibot-Detector",
-    "commit": "unknown",  # 由 gen_detect_signatures.py --commit <sha> 写入；未知必须如实写 unknown
-    "generated_at": "2025-01-01T00:00:00Z",  # 占位，由生成脚本刷新
-    "count": 33,
+    "origin": "own-curated factual signals (vendor docs + observed responses)",
+    # 上游只作对照，不是数据来源；许可证是 NPOSL-3.0，不能当成 MIT 再分发。
+    "upstream_consulted": "scrapfly/Antibot-Detector (NPOSL-3.0) — cross-check only",
+    "commit": "n/a",
+    "generated_at": "2026-11-11T00:00:00Z",
+    "count": 34,
 }
 
 SIGNATURES = [
     {
         'id': 'detect-akamai', 'name': 'Akamai Bot Manager',
         'category': 'Anti-Bot', 'difficulty': 'Medium',
-        "signals": [('cookie', '_abck', 100), ('cookie', 'ak_bmsc', 60), ('cookie', 'sbsd', 100), ('cookie', 'sbsd_o', 100), ('cookie', 'bm_sz', 60), ('cookie', 'bm_sv', 60), ('cookie', 'bm_mi', 60), ('url', '/akam/', 100), ('url', '/.well-known/sbsd/', 100), ('url', '_sec/sbsd/', 100), ('content', 'ak_bmsc', 50), ('content', '_abck', 50), ('content', 'bmak.', 50), ('content', 'sensor_data', 50)],
+        "signals": [('cookie', '_abck', 100), ('cookie', 'ak_bmsc', 60), ('cookie', 'sbsd', 100), ('cookie', 'sbsd_o', 100), ('cookie', 'bm_sz', 60), ('cookie', 'bm_sv', 60), ('cookie', 'bm_mi', 60), ('url', '/akam/', 100), ('url', '/.well-known/sbsd/', 100), ('url', '_sec/sbsd/', 100), ('content', 'ak_bmsc', 50), ('content', '_abck', 50), ('content', 'bmak.', 50), ('content', 'sensor_data', 50), ('content', 'bazadebezolkohpepadr', 95)],
     },
     {
         'id': 'detect-aws-waf', 'name': 'AWS WAF',
@@ -202,6 +207,9 @@ SIGNATURES = [
         'id': 'detect-usb-fingerprint', 'name': 'USB API Fingerprint',
         'category': 'Fingerprint', 'difficulty': 'Low',
         "signals": [('content', 'navigator.usb', 50), ('content', 'getDevices', 50), ('content', 'requestDevice', 50)],
+    },    {
+        'id': 'detect-f5', 'name': 'F5 BIG-IP', 'category': 'Anti-Bot', 'difficulty': 'Medium',
+        "signals": [('cookie', 'TS01*', 90), ('cookie', 'BIGipServer*', 100)],
     },
 ]
 
@@ -249,6 +257,15 @@ STRONG_SIGNALS = [
     ("detect-aws-waf", "AWS WAF", "Anti-Bot", "Medium", "text", "aws-waf-token", 95),
 ]
 
+#: 动态响应头规则（服务端可见，但不是固定字面量）。上游的同族规则是
+#: `^x-[a-z0-9]{8}-[a-z]$`；这里按公开观测独立整理为 Shape 的 8 位随机头族。
+#: 只做“头名”匹配，不读头值，避免把普通 x-* 头误判成 Shape。
+HEADER_REGEX_SIGNALS = [
+    ("detect-shapesecurity", "Shape Security", "Anti-Bot", "Medium",
+     re.compile(r"^x-[a-z0-9]{8}-[a-d]$"), 100, "shape-dynamic-header"),
+]
+
+
 
 def cf_challenge_type(body: str, headers: dict | None = None, url: str = "") -> str:
     """尽力判断 CF 挑战类型；判断不出返回空串。"""
@@ -280,6 +297,7 @@ def detect(
     cookies = cookies or {}
     lowered_headers = {k.lower(): str(v) for k, v in headers.items()}
     text = (body or "")[:400_000].lower()
+    low_url = (url or "").lower()
     # 先跑强特征（命中的话置信度更高，也覆盖"挑战页还没下 cookie"的情况）
     strong: dict[str, Detection] = {}
     for det_id, name, category, difficulty, kind, token, confidence in STRONG_SIGNALS:
@@ -302,6 +320,22 @@ def detect(
             entry.confidence = max(entry.confidence, confidence)
             entry.hits.append(kind + ":" + token)
 
+    for det_id, name, category, difficulty, pattern, confidence, label in HEADER_REGEX_SIGNALS:
+        for header in lowered_headers:
+            if pattern.match(header):
+                existing = strong.get(det_id)
+                if existing is None:
+                    strong[det_id] = Detection(
+                        id=det_id, name=name, category=category, difficulty=difficulty,
+                        confidence=confidence, hits=["header_re:" + label],
+                    )
+                else:
+                    existing.confidence = max(existing.confidence, confidence)
+                    hit = "header_re:" + label
+                    if hit not in existing.hits:
+                        existing.hits.append(hit)
+                break
+
     found: list[Detection] = list(strong.values())
     for signature in SIGNATURES:
         hits: list[str] = []
@@ -317,7 +351,21 @@ def detect(
                     best = max(best, confidence)
             else:
                 needle = token.lower()
-                if needle and needle in text:
+                # url 类规则匹配 URL；content/text 匹配响应体。
+                # 上游 PerimeterX 的 collector/enforcement 端点只会出现在 body 的
+                # script src 里，不会出现在被探测页自己的 URL 上 —— 这些规则
+                # 显式声明 kind="url" 但语义是"这个字符串出现在哪都算证据"，
+                # 所以 URL 类通配规则同时查 URL 与 body（非通配 url 规则仍只看 URL，
+                # 避免回到"body 里带 /akam/ 字样就误判"的老问题）。
+                if kind == "url" and "*" in token:
+                    haystack = low_url + "\n" + text
+                else:
+                    haystack = low_url if kind == "url" else text
+                # 上游有 3 条带 * 的 url 规则（collector-*.perimeterx.net / /api/v*/collector /
+                # /enforcement.*.js）。旧实现按字面子串找，这些规则永远不会命中。
+                matched = (fnmatch.fnmatchcase(haystack, f"*{needle}*")
+                           if "*" in needle else (needle and needle in haystack))
+                if matched:
                     hits.append(kind + ":" + token)
                     best = max(best, confidence)
         if hits:

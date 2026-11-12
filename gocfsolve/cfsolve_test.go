@@ -1,8 +1,12 @@
 package cfsolve
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -459,5 +463,91 @@ func TestSolveWithOptionsMissingProductStillFails(t *testing.T) {
 	}
 	if _, err := cli.Get(context.Background(), "https://example.com/"); err == nil {
 		t.Fatal("缺 cf_clearance 时必须报错（默认 want 行为不变）")
+	}
+}
+
+// roundTripFunc 让测试用函数实现 http.RoundTripper。
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+// TestSolveUsesLongLivedClient 钉 P0-01：`/solve` 必须走 240s 的 hc，
+// 而不是 5s 的探活 client。用自定义 Transport 断言“哪条 client 发了请求”，
+// 不依赖真实延迟，测试保持毫秒级。
+func TestSolveUsesLongLivedClient(t *testing.T) {
+	body, err := json.Marshal(okBody())
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	hc := &http.Client{Timeout: 240 * time.Second, Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(bytes.NewReader(body)),
+			Request:    r,
+		}, nil
+	})}
+	probe := &http.Client{Timeout: 5 * time.Second, Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		return nil, fmt.Errorf("5s 探活 client 被用于 %s", r.URL.Path)
+	})}
+	cli := New("http://solver.invalid", WithToken("test-token"))
+	cli.hc = hc
+	cli.probe = probe
+
+	if _, err := cli.Get(context.Background(), "https://www.example.com/"); err != nil {
+		t.Fatalf("Get 必须走 hc；实际错误: %v", err)
+	}
+}
+
+// TestAutoNoChallengeReturnsErrNoChallenge 钉 P2-03：route=auto 探测到无盾时，
+// 服务端回 `{ok:true, solved:false, no_challenge:true}`。这不是失败，客户端必须
+// 返回可识别的 ErrNoChallenge，而不是“没返回 cf_clearance”。
+func TestAutoNoChallengeReturnsErrNoChallenge(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"ok": true, "solved": false, "no_challenge": true, "route": "auto",
+		})
+	}))
+	defer srv.Close()
+
+	cli := New(srv.URL, WithToken("test-token"))
+	_, err := cli.Get(context.Background(), "https://www.example.com/")
+	if !errors.Is(err, ErrNoChallenge) {
+		t.Fatalf("应返回 ErrNoChallenge，实际: %v", err)
+	}
+}
+
+// TestColdSolveReturnsDeepCopy 钉 P2-02：冷求解返回的 CookieList/Cookies 不能与缓存共享。
+// 调用方改一次返回值，同域第二次 Get 不能看到被污染的值。
+func TestColdSolveReturnsDeepCopy(t *testing.T) {
+	var calls int32
+	srv := fakeSolver(t, &calls, okBody, http.StatusOK)
+	defer srv.Close()
+
+	cli := New(srv.URL, WithToken("test-token"))
+	first, err := cli.Get(context.Background(), "https://www.example.com/")
+	if err != nil {
+		t.Fatalf("第一次 Get: %v", err)
+	}
+	first.CookieList[0].Value = "POISONED"
+	first.Cookies["cf_clearance"] = "POISONED"
+
+	second, err := cli.Get(context.Background(), "https://www.example.com/")
+	if err != nil {
+		t.Fatalf("第二次 Get: %v", err)
+	}
+	if second.CookieList[0].Value == "POISONED" || second.Cookies["cf_clearance"] == "POISONED" {
+		t.Fatalf("冷结果与缓存共享了可变字段：%+v", second)
+	}
+}
+
+// TestReplayFailsClosedWhenProxyUnparsable 钉 P2-01：登记过出口但 URL 解析失败时必须
+// fail closed，不能因为 proxies 为空就悄悄走本机直连。
+func TestReplayFailsClosedWhenProxyUnparsable(t *testing.T) {
+	cli := New("http://solver.invalid", WithToken("t"), WithEgressProxy("p1", "http://[::bad"))
+	_, err := cli.replayClientFor("p1")
+	if !errors.Is(err, ErrNoEgressProxy) {
+		t.Fatalf("应返回 ErrNoEgressProxy，实际: %v", err)
 	}
 }

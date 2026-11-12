@@ -150,6 +150,16 @@ def test_proxy_with_pydoll_is_hard_conflict(wired, capsys):
     assert "配置冲突" in out
 
 
+def test_proxy_with_flaresolverr_is_hard_conflict(wired, capsys):
+    """FlareSolverr 也是远端出口；与代理池共存会让缓存键出口与凭证出口不一致。"""
+    code, out = run([
+        "--proxy", "http://127.0.0.1:8080",
+        "--flaresolverr", "http://127.0.0.1:8191", "--no-auth",
+    ], capsys)
+    assert code == 2
+    assert "配置冲突" in out
+
+
 def test_prewarm_parse_error_returns_2_and_closes_solver(wired, capsys, tmp_path):
     """保活目标文件不存在 → 明确报错并释放已装配的 solver（不能带着半成品继续跑）。"""
     missing = tmp_path / "nope.txt"
@@ -338,3 +348,14 @@ def test_startup_log_line_contains_operational_facts(wired, capsys):
     assert "auth=disabled" in out
     assert "cache=" in out
     assert "proxies=0" in out
+
+
+def test_token_init_oserror_returns_2_without_traceback(wired, capsys):
+    """锁残留/目录不可写：给结构化提示 + exit 2，不甩 traceback。"""
+    wired.setattr(boot, "load_or_create_token",
+                  lambda _path: (_ for _ in ()).throw(OSError("锁未收敛")))
+    code = boot.main(["--port", "18878"])
+    captured = capsys.readouterr()
+    assert code == 2
+    assert "token 初始化失败" in captured.err and "锁未收敛" in captured.err
+    assert "Traceback" not in captured.err

@@ -27,7 +27,9 @@ const (
 )
 
 // 终止性错误：换哪个节点结果都一样，且**不是节点的锅**。
-// 与 solver/backends.py 的 TERMINAL_CODES 一一对应，改一边必须改另一边。
+// **注意：与 solver/backends.py 的 TERMINAL_CODES 不是一一对应** ——
+// Python 把 busy/rate-limited 视为路由层的终止错误；池层把它们归到 saturationCodes
+// （换节点有意义、但节点没坏）。改任一边之前先读这段，别按“同步两张表”改坏 failover。
 //
 // 为什么必须有这条：池原来对任意 error 都 markFail。一个调用方把 url 写错（400），
 // 或 token 配错（401），连续两次就会把**健康节点摘掉 30 秒**——池子会自我雪崩。
@@ -339,7 +341,9 @@ func (p *Pool) Do(ctx context.Context, req *http.Request) (*http.Response, error
 	}
 	resp, err := node.client.DoWith(ctx, req, cl)
 	if err != nil {
-		node.markFail(err, p.opts.maxFailures, p.opts.downDuration)
+		// 回放侧错误（目标不可达、出口未登记代理、TLS 失败）不代表这个**求解节点**坏了：
+		// 凭证已经拿到，失败发生在"用凭证访问目标站"这一步。记成节点故障会让两次
+		// 目标站故障就摘掉一组健康求解器 —— 自己制造故障。节点健康只由求解服务侧决定。
 		return nil, err
 	}
 	// 回放被拦（403 / cf-mitigated）= 这个节点**给出的凭证**失效了，**不是节点坏了**。

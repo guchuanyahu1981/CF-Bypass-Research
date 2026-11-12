@@ -21,11 +21,21 @@ class FakeSolver:
         self.remaining = remaining or {}
         self.fail = fail or set()
         self.solved: list[str] = []
+        self.calls: list[tuple[str, bool]] = []
+        self.claims: list[str] = []
 
     def cache_remaining(self, url: str) -> float:
         return self.remaining.get(url, -1.0)
 
+    def claim_solve(self, url: str, budget: float, want: str = "clearance") -> bool:
+        self.claims.append(url)
+        return True
+
+    def release_claim_for(self, url: str, want: str = "clearance") -> None:
+        pass
+
     def solve(self, url: str, timeout: float = 60.0, force: bool = False):
+        self.calls.append((url, force))
         self.solved.append(url)
         if url in self.fail:
             raise RuntimeError("solve failed")
@@ -70,6 +80,7 @@ def test_renews_hosts_below_threshold():
     p = _prewarmer(s, ["https://soon.example/"], renew_before=300)
     p.run_once()
     assert s.solved == ["https://soon.example/"]
+    assert s.calls == [("https://soon.example/", True)], "续期必须 force=True，否则只会命中缓存"
     assert p.stats.renewed == 1
     assert p.stats.per_host["https://soon.example/"]["failures"] == 0
 
@@ -143,3 +154,52 @@ def test_stats_are_json_friendly():
     p.run_once()
     blob = json.dumps(p.stats.as_dict(), ensure_ascii=False)
     assert '"enabled": true' in blob and "renewed" in blob
+
+
+def test_ttl_shorter_than_renew_window_does_not_renew_every_scan():
+    """回归：--ttl <= renew_before 时，remaining 永远不大于阈值 → 每轮都冷解。"""
+    s = FakeSolver({"https://short.example/": 40.0})
+    s.ttl = 60
+    p = _prewarmer(s, ["https://short.example/"], renew_before=300)
+    p.run_once()
+    assert s.solved == [], "刚续过（40s 剩余）不该立刻再解"
+    s.remaining["https://short.example/"] = 20.0
+    p.run_once()
+    assert s.solved == ["https://short.example/"]
+
+
+def test_claim_lost_is_skipped_not_failed():
+    """多个 worker 同时续同一域：抢不到 claim 的跳过，不记 failure。"""
+    class Claimed(FakeSolver):
+        def claim_solve(self, url, budget, want="clearance"):
+            return False
+
+    s = Claimed({"https://busy.example/": 10.0})
+    p = _prewarmer(s, ["https://busy.example/"])
+    p.run_once()
+    assert s.solved == [] and p.stats.failures == 0 and p.stats.skipped == 1
+
+
+def test_rate_limited_defers_without_penalty():
+    """准入拒绝（rate-limited/busy）不是域故障：短延迟重试，不累计 failures。"""
+    class Rate(Exception):
+        code = type("C", (), {"value": "rate-limited"})()
+
+    class Limited(FakeSolver):
+        def solve(self, url, timeout=60.0, force=False):
+            raise Rate("too many")
+
+    s = Limited({"https://limited.example/": 10.0})
+    p = _prewarmer(s, ["https://limited.example/"])
+    p.run_once()
+    assert p.stats.failures == 0 and p.stats.skipped == 1
+    assert p.stats.per_host["https://limited.example/"]["failures"] == 0
+    assert p._hosts[0].next_attempt_at > time.time()
+
+
+def test_very_short_ttl_still_skips_recently_renewed():
+    s = FakeSolver({"https://tiny.example/": 7.0})
+    s.ttl = 8
+    p = _prewarmer(s, ["https://tiny.example/"], renew_before=300)
+    p.run_once()
+    assert s.solved == [], "ttl<=10 时窗口仍 >= ttl，会每轮重解"

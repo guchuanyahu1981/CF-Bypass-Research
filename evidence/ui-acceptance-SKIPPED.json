@@ -1,0 +1,5 @@
+{
+  "schema_version": 1,
+  "skipped": true,
+  "reason": "accept --skip-browser：UI 截图验收必须真浏览器"
+}

@@ -423,13 +423,13 @@ def handle_compat_bypass(
             mc_body["proxy"] = entry.raw_url      # 含凭据，仅内存传递，不进日志
 
     # 超时：主链路的 `timeout`（[5,120]）与扩展层的 `timeout_s` 都认，
-    # `timeout` 优先做夹取 —— 调用方不该为两套字段名记两份约定。
+    # 两者都必须夹取 —— 否则已鉴权调用方可用 timeout_s=1e9 把该类求解与其锁占住近乎永久。
     clamp = clamp_timeout or _clamp_timeout
     timeout_s = 0.0
     if mc_body.get("timeout") is not None:
         timeout_s = clamp(mc_body.get("timeout"))
     elif mc_body.get("timeout_s"):
-        timeout_s = mc_body.get("timeout_s")
+        timeout_s = clamp(mc_body.get("timeout_s"))
 
     mark_start(mc_body)
     result = asyncio.run(solve_async(mc_body, timeout_s=timeout_s))
