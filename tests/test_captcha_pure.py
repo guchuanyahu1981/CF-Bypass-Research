@@ -18,6 +18,7 @@ import base64
 import hashlib
 import io
 import json
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -26,6 +27,20 @@ import pytest
 cv2 = pytest.importorskip("cv2")
 Image = pytest.importorskip("PIL.Image")
 pytest.importorskip("onnxruntime")
+
+# 求解器模块顶层 `import cloakbrowser`；CI 不装它。第二批纯函数测试（文件尾部）
+# 直接 import 这些模块，所以先注入桩（与 test_captchas_offline.fake_cloakbrowser 同款）。
+_cloak = sys.modules.get("cloakbrowser")
+if _cloak is None:
+    import types as _types
+
+    def _no_launch(*a, **k):  # pragma: no cover - 纯函数测试不该走到这里
+        raise AssertionError("纯函数测试不许启动真实浏览器")
+
+    _mod = _types.ModuleType("cloakbrowser")
+    _mod.launch_async = _no_launch
+    _mod.__getattr__ = lambda name: _no_launch
+    sys.modules["cloakbrowser"] = _mod
 
 from captchas.aliyun.gap_cv import (  # noqa: E402
     _detect_gap_cv, _piece_geometry, refine_gap_x,
