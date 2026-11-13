@@ -100,9 +100,9 @@ export const BENCHMARKS: Benchmark[] = [
   {
     id: 'tests.python',
     label: { zh: 'Python 测试', en: 'Python tests' },
-    value: 1237,
+    value: 1268,
     unit: 'count',
-    measuredAt: '2026-11-12',
+    measuredAt: '2026-11-13',
     conditions: { zh: 'pytest；离线', en: 'pytest; offline' },
     source: 'docs/facts.json',
     status: 'verified',
@@ -120,9 +120,9 @@ export const BENCHMARKS: Benchmark[] = [
   {
     id: 'tests.go',
     label: { zh: 'Go 测试', en: 'Go tests' },
-    value: 57,
+    value: 58,
     unit: 'count',
-    measuredAt: '2026-11-11',
+    measuredAt: '2026-11-13',
     conditions: { zh: 'go test', en: 'go test' },
     source: 'docs/facts.json',
     status: 'verified',

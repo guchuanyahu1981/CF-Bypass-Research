@@ -18,6 +18,7 @@ import base64
 import hashlib
 import io
 import json
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -273,3 +274,139 @@ def test_pick_fluent_returns_false_when_no_options():
     page = _Page(n=0)
     assert asyncio.run(_pick_fluent(page, ["#real"], 0)) is False
     assert page.clicked == []
+
+# ── 第二批纯函数（v6.5 收口）：求解器内"算错就假成功/假失败"的判定逻辑 ──
+
+def test_turnstile_error_codes_parses_siteverify_shapes():
+    """siteverify 的错误码在 error-codes；SomeDoors 兼容层叫 details；坏 JSON 是空表。"""
+    from captchas.turnstile.solve import _error_codes
+
+    assert _error_codes('{"success":false,"error-codes":["invalid-input-secret"]}') == [
+        "invalid-input-secret"]
+    assert _error_codes('{"success":false,"details":["timeout-or-duplicate"]}') == [
+        "timeout-or-duplicate"]
+    assert _error_codes('{"success":true,"error-codes":[]}') == []
+    assert _error_codes('{"success":true}') == []
+    assert _error_codes("not json") == []
+    assert _error_codes("") == []
+
+
+def test_cloudflare_clearance_picks_the_right_cookie():
+    """cookie 池里挑 cf_clearance：命中整条记录、找不到给 None（不是空 dict）。"""
+    from captchas.cloudflare.solve import _clearance
+
+    pool = [{"name": "cf_chl_2", "value": "x"},
+            {"name": "cf_clearance", "value": "tok-abc", "domain": ".example.com"}]
+    hit = _clearance(pool)
+    assert hit is not None and hit["value"] == "tok-abc" and hit["domain"] == ".example.com"
+    assert _clearance([{"name": "other", "value": "v"}]) is None
+    assert _clearance([]) is None
+
+
+def test_recaptcha_build_v2_page_embeds_sitekey_and_lib():
+    """ enterprise 与普通版用不同的 lib；sitekey 必须真的进了 HTML（占位符残留=回归）。"""
+    from captchas.recaptcha.solve import _build_v2_page
+
+    html = _build_v2_page("6LeIxAcAAAA")
+    assert "6LeIxAcAAAA" in html and "__SITEKEY__" not in html
+    assert "api.js" in html and "enterprise.js" not in html
+
+    ent = _build_v2_page("6Le-IxAcBBB", enterprise=True)
+    assert "enterprise.js" in ent and "api.js" not in ent.replace("enterprise.js", "")
+    assert "6Le-IxAcBBB" in ent and "__SITEKEY__" not in ent
+
+
+def test_perimeterx_result_error_branches_are_distinct():
+    """_result 的三种终态必须有可区分的 error 文案：
+    gate 没渲染 / 按住了但 px3 没转（判定为机器人）/ 成功。"""
+    from captchas.perimeterx.solve import _result
+
+    t0 = 0.0
+    # 1) gate 从未渲染：silent-pass / render_flow 错
+    out = _result(t0, {"gate_reached": False})
+    assert out["solved"] is False
+    assert "gate" in out["error"] and "never rendered" in out["error"]
+
+    # 2) gate 到了、按住了、但 _px3 没轮转：生物判定为 bot
+    out = _result(t0, {"gate_reached": True, "actuated": True, "px3_before": "A", "px3_after": "A"})
+    assert out["solved"] is False
+    assert "did not rotate" in out["error"]
+
+    # 3) 成功：px3 轮转 → solved、无 error、replay 契约字段在
+    out = _result(t0, {"gate_reached": True, "actuated": True,
+                       "px3_before": "A", "px3_after": "B", "attempts": 2},
+                  ua="UA", cookies={"_px3": "B", "_pxvid": "V"})
+    assert out["solved"] is True and "error" not in out
+    assert out["px3"] == "B" and out["px3_rotated"] is True
+    assert out["cookie_header"] == "_px3=B; _pxvid=V"
+    assert out["replay_contract"]["bound_to"] == ["_pxvid", "client_ip", "user_agent"]
+
+    # 4) 无 px3_before 的首过场景：actuated + px3 即成功（不需要轮转）
+    out = _result(t0, {"gate_reached": True, "actuated": True}, cookies={"_px3": "C"})
+    assert out["solved"] is True and "error" not in out
+
+
+def test_awswaf_waf_token_picks_cookie_and_block_titles_match():
+    """_waf_token 找不到必须给 None（不是抛错）；_title_is_block 是大小写无关的子串匹配。"""
+    from captchas.awswaf.solve import _waf_token, _title_is_block
+
+    pool = [{"name": "aws-waf-token", "value": "tok", "domain": ".example.com"}]
+    hit = _waf_token(pool)
+    assert hit is not None and hit["value"] == "tok"
+    assert _waf_token([]) is None
+    assert _waf_token([{"name": "session", "value": "x"}]) is None
+
+    # 大小写无关：真实 CloudFront 标题是 "ERROR: The request could not be satisfied."
+    assert _title_is_block("ERROR: The Request Could Not Be Satisfied.") is True
+    assert _title_is_block("403 Forbidden") is True
+    assert _title_is_block("Welcome to Example") is False
+    assert _title_is_block(None) is False
+
+
+def test_aws_title_block_on_mock_page():
+    """_title_is_block 是 _is_cloudfront_block 的判定核（async 版只是 page.title 包装）。
+    核逻辑在 sync 函数上钉死；async 包装的真实分支需真浏览器（见覆盖率盲区标注）。"""
+    from captchas.awswaf.solve import _title_is_block
+
+    # 边界：真实页面标题常带前后空白/零宽字符，strip 必须兜住
+    assert _title_is_block("  403 Forbidden \n") is True
+    assert _title_is_block("​Request Blocked") is True   # 子串匹配不做 Unicode 归一——如实行为
+    assert _title_is_block("Access DENIED by cloudfront") is True
+
+
+def test_hcaptcha_grid_overlay_labels_every_cell():
+    """_grid_overlay 把编号网格画上去：输出仍是合法 PNG，尺寸不变，且每个 cell 有标签。"""
+    from captchas.hcaptcha.image_solve import _grid_overlay, _GRID
+
+    # 合成一张 160x160 的底图
+    buf = io.BytesIO()
+    Image.new("RGB", (160, 160), (30, 30, 30)).save(buf, format="PNG")
+    b64 = base64.b64encode(buf.getvalue()).decode()
+
+    out = _grid_overlay(b64)
+    img = Image.open(io.BytesIO(base64.b64decode(out)))
+    assert img.size == (160, 160)
+    # 网格线是红色描边：角落像素应与纯底图不同（画过东西）
+    assert img.getpixel((0, 0)) != (30, 30, 30)
+    # cell 数与 _GRID² 一致（16 个标签由 _GRID=4 布局决定，画进 yellow 框）
+    assert _GRID == 4
+
+
+def test_recaptcha_classifier_mode_validation():
+    """_get_keypool 的 classifier 参数面：非法值必须 ValueError 并列出合法集合；
+    合法值在缺 ONNX 权重时落到 mistral（auto→mistral 分支）。"""
+    from captchas.recaptcha import solve as rs
+
+    with pytest.raises(ValueError) as ei:
+        rs._get_keypool("bogus-mode")
+    assert "bogus-mode" in str(ei.value) and "mistral" in str(ei.value)
+
+    # auto → 缺权重时 mistral。KeyPool 构造要读 captchas/common/apikey.txt（仓库不含，
+    # .gitignore 排除）——缺 key 时 FileNotFoundError，这条路径也是"配置缺失"契约的一部分：
+    # 报错必须是直接的 FileNotFoundError，而不是被吞成 None。
+    rs._keypool_cache.clear()
+    apikey = Path(__file__).resolve().parents[1] / "captchas" / "common" / "apikey.txt"
+    if not apikey.exists():
+        with pytest.raises(FileNotFoundError):
+            rs._get_keypool(None)   # 缺 key 的失败要可见，不许静默
+    rs._keypool_cache.clear()

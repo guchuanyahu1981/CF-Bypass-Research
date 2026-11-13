@@ -1,0 +1,29 @@
+{
+  "release": "6.5.0",
+  "date": "2026-11-13",
+  "theme": "门禁可信 + 参考对标落地收口 + 文档收敛",
+  "base_commit": "12e35af",
+  "changes": {
+    "ci_red_fix": "pycryptodome into requirements-dev (arkose/predict coverage 35%->22% on CI broke the 34% module gate); _FakeRaw.close() added (HTTPError __del__ chain unraisable)",
+    "t05_doc_commands_gate": "scripts/validate-doc-commands.mjs, wired into CI; positive+negative verified",
+    "t07_cfsolve_setup": "run.py cfsolve-setup + scripts/cfsolve_setup.py (diagnose-only wizard, 15 unit tests, GBK-safe stdout)",
+    "t10_fault_injection": "conftest fault_inject fixture + tests/test_fault_injection.py (7 cases)",
+    "doctor_gate": "scripts/doctor.py --gate (FAIL-only nonzero); verify now 14 steps with doctor-gate snapshot",
+    "go_contract": "TestPoolRateLimitedFailsOverWithoutBlamingNode (429+rate-limited -> failover without marking node down)",
+    "captchas_coverage": "22.21% (v6.4.3) -> 29.17% (754/2585), pure-function tests for turnstile/cloudflare/perimeterx/recaptcha/awswaf/hcaptcha",
+    "doc_convergence": "three status docs -> one (计划书/...待办清单.md §3.0); 下一步改进指南.md and 参考的结果计划指南.md git-rm'd",
+    "rss_flake": "test_process_metrics_present_and_sane upper bound 200->400MB (live_server working-set jitter under full-suite load)"
+  },
+  "verification": {
+    "python": "1260 passed / 8 skipped (full run, exit 0)",
+    "coverage": "solver/ 90.63% (gate 80) / captchas/ 29.17% (gate 20); 68 module gates all pass",
+    "go": "58 Test* -race green + vet clean",
+    "gates": "validate-docs 13 consistent / validate-openapi 14 ops / validate-findings 54 / gates.selftest 24/24 / validate-doc-commands green / repo-hygiene clean",
+    "site": "build+csp 17html/20hash; verify:site 14 routes axe 0; e2e 22/22; content 12/12; tokens/contrast/seo green; Lighthouse desktop 100x4+agentic 100, mobile 99-100/100/100/100",
+    "acceptance": "evidence/acceptance.json overall=passed (UI 70/70, realcalls 46/46, e2e 40/40, review PASS)"
+  },
+  "ledger": {
+    "real_machine": "64/80 used, failures 5/5 -> hard stop per policy.md §2"
+  },
+  "known_flake_fixed": true
+}

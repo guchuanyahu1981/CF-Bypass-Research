@@ -63,6 +63,7 @@ COMMANDS = {
     'review': None,
     'report': None,
     'egress': None,
+    'cfsolve-setup': None,
     'mcp': None,
     'help': None,
 }
@@ -397,6 +398,15 @@ def cmd_verify(a):
             return 1
         return run([sys.executable, str(p)])
 
+    def doctor_gate():
+        """环境快照（T-03）：--gate 模式，只有 FAIL 阻断。
+
+        WARN（如 cfsolve 未配置）是环境优化提示，不是故障——人看 doctor 用默认
+        模式（WARN→1），verify 聚合用 --gate 把两者分开。--offline：不重复起服务
+        （smoke 已经起过一次了），只做环境自检快照。
+        """
+        return run([sys.executable, "scripts/doctor.py", "--offline", "--gate"])
+
     def research_doctor():
         p = ROOT / "scripts" / "research.py"
         if not p.exists():
@@ -428,6 +438,7 @@ def cmd_verify(a):
         ("repo-hygiene(T-69)", hygiene),
         ("research-doctor(T-67)", research_doctor),
         ("service-report(golden)", service_report),
+        ("doctor-gate(环境快照)", doctor_gate),
     ])
     if rc == 0:
         print("\n全部通过 ✅")
@@ -616,6 +627,16 @@ def cmd_egress(a):
     return run(cmd)
 
 
+def cmd_cfsolve_setup(a):
+    """cfsolve 装配向导：只诊断不代劳（T-07）。缺项给指向，不执行任何构建。"""
+    cmd = [sys.executable, str(ROOT / "scripts" / "cfsolve_setup.py")]
+    if getattr(a, "repo", ""):
+        cmd += ["--repo", a.repo]
+    if getattr(a, "json", False):
+        cmd += ["--json"]
+    return run(cmd)
+
+
 def cmd_mcp(a):
     """MCP stdio 适配器：stdout 是协议通道，不能混任何日志/提示。
 
@@ -630,7 +651,7 @@ def cmd_help(a):
 
 
 for _name in COMMANDS:
-    fn = globals().get(f"cmd_{_name}")
+    fn = globals().get(f"cmd_{_name.replace('-', '_')}")
     COMMANDS[_name] = fn or cmd_help
 
 
@@ -670,6 +691,9 @@ def build_parser():
                             help="已登记的出口 IP，格式 scheme://host:port=1.2.3.4")
             sp.add_argument("--egress-echo-url", default="",
                             help="IP 回显地址（默认 Cloudflare /cdn-cgi/trace）")
+        if name == "cfsolve-setup":
+            sp.add_argument("--repo", default="", help="cfsolve 上游仓库路径（默认 CFSOLVE_REPO 或 ~/cfsolve-upstream）")
+            sp.add_argument("--json", action="store_true", help="机器可读输出")
     return p
 
 

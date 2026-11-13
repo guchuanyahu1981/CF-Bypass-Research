@@ -64,6 +64,8 @@ jobs:
         run: node scripts/validate-docs.mjs --coverage-json=coverage.json
       - name: 接口规格一致性（openapi.json ↔ 源码路由）
         run: node scripts/validate-openapi.mjs
+      - name: 文档命令存在性（README/docs 里的 run.* 子命令必须真实存在，T-05）
+        run: node scripts/validate-doc-commands.mjs
       # v6.2：路由对得上不代表字段对得上。这条把「真进程跑一遍、响应形状与 golden 逐字节比对」
       # 做成门禁 —— 新加/删掉一个响应字段而不更新文档，这里会红（validate-openapi 看不见）。
       - name: 服务报告 golden（响应字段形状）

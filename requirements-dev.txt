@@ -39,3 +39,6 @@ opencv-python-headless==4.10.0.84
 numpy==1.26.4
 pillow==10.4.0
 onnxruntime==1.20.1
+# arkose 纯函数测试（test_captcha_pure.py）用到 Crypto.Cipher/Padding；缺它时该用例
+# importorskip，predict.py 覆盖率从 35% 掉到 22%，跌破模块门禁（2026-11-12 CI 红灯根因）。
+pycryptodome==4.2.0

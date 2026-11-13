@@ -107,3 +107,21 @@ def test_mismatch_is_fail_and_names_the_consequence(monkeypatch):
                          verify=True, echo_url="x", timeout=1.0)
     assert rep.worst() == doc.FAIL, _names(rep)
     assert any("静默 403" in c["hint"] for c in rep.checks if c["level"] == doc.FAIL)
+
+
+# ── T-03 残留：--gate 模式（verify 聚合用） ──
+
+def test_doctor_gate_mode_warn_does_not_block(tmp_path, monkeypatch, capsys):
+    """--gate：WARN（如 cfsolve 未配置）不阻断（exit 0）；默认模式仍 WARN→1。"""
+    doctor = _doctor()
+    monkeypatch.chdir(ROOT)
+    # --offline 且清掉 CFSOLVE_* → 必有 WARN（cfsolve 未配置）
+    monkeypatch.delenv("CFSOLVE_BIN", raising=False)
+    monkeypatch.delenv("CFSOLVE_PROFILE", raising=False)
+    rc_gate = doctor.main(["--offline", "--gate"])
+    assert rc_gate == 0, f"--gate 应把 WARN 记为通过，实际 exit={rc_gate}"
+    out = capsys.readouterr().out
+    assert "--gate" in out  # WARN 时打印说明行，不静默
+
+    rc_default = doctor.main(["--offline"])
+    assert rc_default == 1, f"默认模式 WARN→1 的提醒语义不该被 --gate 改掉，实际 exit={rc_default}"

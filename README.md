@@ -287,7 +287,7 @@ scripts/
   probe_camoufox.py     # Camoufox 过盾实验
   diag_challenge.py     # 挑战页 DOM 诊断：iframe / checkbox / 按钮 / 截图
 captchas/               # 万盾求解器副本（11 厂商；自包含，不追上游，见 captchas/README.md）
-tests/                  # 1237 项 Python 测试（注入假浏览器/假后端，离线）
+tests/                  # 1268 项 Python 测试（注入假浏览器/假后端，离线）
 docs/
   项目规格.md            # ★ 单一事实源：是什么/边界/承诺什么/不承诺什么
   API.md                # ★ 接口契约（参数/响应/错误码表）
@@ -366,6 +366,7 @@ cl, err := pool.Get(ctx, target)      // 同域永远打到同一个 worker
 .\run.ps1 smoke      # 起服务 → /health → /detect → SSRF 守卫（默认读 .env token；--no-auth 调试）
 .\run.ps1 e2e        # 真进程 E2E：鉴权/metrics/route=auto/审计/优雅退出（离线，约 17s）
 .\run.ps1 bench      # 离线压测三模式（hot 回放吞吐 / cold 准入 / share 多进程缓存）
+.\run.ps1 cfsolve-setup  # cfsolve 装配向导：查工具链/仓库/补丁/产物/配置，只诊断不代劳（docs/纯协议-cfsolve.md）
 .\run.ps1 verify     # 提交前必跑：pytest + 覆盖率 + compileall + Go + findings + e2e + smoke + 卫生 + 研究台 + 服务报告（不含 doctor/bench）
 .\run.ps1 stop       # 停掉占着端口的进程
 
@@ -373,7 +374,7 @@ cl, err := pool.Get(ctx, target)      // 同域永远打到同一个 worker
 
 | 轨道 | 命令 | 证据 |
 |---|---|---|
-| verify（13 步门禁） | `run.ps1 verify` | coverage.json、e2e-local.json |
+| verify（14 步门禁，含 doctor 环境快照） | `run.ps1 verify` | coverage.json、e2e-local.json |
 | UI 截图验收 | `run.ps1 ui` | `evidence/ui-acceptance.json` + `plans/证据/ui-*.png`（70 断言：9 状态、每按钮、键盘、axe 深浅主题、320/360） |
 | 真实调用验收 | `run.ps1 realcalls` | `evidence/realcalls.json`（46 项：全端点 × 鉴权两态、HEAD/OPTIONS/405/keep-alive/chunked） |
 | 真实 E2E 验收 | `run.ps1 e2e` | `evidence/e2e-local.json`（40 项：真进程 + 真浏览器业务链路） |
@@ -384,7 +385,7 @@ cl, err := pool.Get(ctx, target)      // 同域永远打到同一个 worker
 `--skip-browser` 会写 SKIPPED 标记并把汇总判为 `partial`（不冒充完整验收）。
 
 最近一轮（2026-11-12）：UI 70/70、真实调用 46/46、E2E 40/40、复审 13 领域全 PASS，
-Python 1229 passed / 8 skipped（1237 收集）、solver 覆盖率 90.55%、Go 57 项 `-race` 绿。
+Python 1229 passed / 8 skipped（1268 收集）、solver 覆盖率 90.55%、Go 57 项 `-race` 绿。
 
 `run.bat` 是同一套子命令的 cmd 包装。
 

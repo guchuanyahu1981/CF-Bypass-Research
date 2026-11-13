@@ -11,36 +11,37 @@
 > | `plans/审计与改进指南-v6.3→v7.0.md` | `fa5615c` | 未完成 9 项 → §3.1（本轮实测了 file:line）；风险决策 → §4 |
 > | `workflow_status.md` | `0ed810b` | 仍被代码引用的风险 → §4.1；审查记录 → §4.4 |
 >
-> **基线**：`master` @ `83028f2`（v6.4.2，已推送、已打 tag）+ v6.4.3「2026-11-11 全量验收复核」 · 2026-11-11 · 证据分级：**已验证**（实际运行观察）/ **静态确认**（读代码确认）/ **合理推断** / **待验证**（缺环境或权限）
+> **基线**：`master` @ `12e35af`（v6.4.3 + 参考对标落地 + 四类验收流水线，已推送）+ 本轮 v6.5.0 施工 · 2026-11-13 · 证据分级：**已验证**（实际运行观察）/ **静态确认**（读代码确认）/ **合理推断** / **待验证**（缺环境或权限）
 
 ---
 
 ## 0. 一页速览
 
-- **服务面**（`solver/` + `gocfsolve/`）：v6.4.0–v6.4.2 已推送并打 tag；v6.4.3 于 2026-11-11 完成全量验收复核（Python 1058 passed / Go 52 / 40 项真进程 E2E / 压测三模式），**无产品代码变更**。CI 双 workflow 在 v6.4.0 全绿（`ci` run 42419767594 / `site-ci` run 42419701920），v6.4.1 的 `site-ci` 因版本页未同步而红——由 v6.4.2 修复。
-- **嫁接层**（`captchas/`）：40 文件 5,050 行已纳入覆盖率门禁，实测 22.21%（门槛 20%）。
-- **公开站**（`site/`）：V1.1 落地——14 路由、axe 0、Lighthouse 桌面 **100/100/100/100**（中英两页，2026-11-11 复测；LCP 0.334s/0.296s、CLS≈0、TBT 0）、移动档本轮未复测（历史记录 Perf 97–98 / A11y 99–100 / BP 100 / SEO 100）。
-- **现有两页**（`/`、`/console`）：36 单测 + 35/35 真浏览器 E2E（2026-11-11 复跑），wedged 徽章 6.47:1。
-- **未闭环**：工程待办 **9/9 已闭环**（§3.1）、UI/UX 残留 **5/5 已处理**（§3.2）；§3.3 六项现状：**R-2 部分闭环**（审计 + 出口联动已验证，clearance 未拿到）、**R-1 / R-3 受阻**（许可证 / cfsolve 未到 stage2）、**D-1 / D-2 / D-3 未执行**（D-1 用户 2026-11-11 明确本轮不部署公开站；D-2/D-3 缺账号与人工）。**无 P0/P1 阻塞**。
+- **服务面**（`solver/` + `gocfsolve/`）：v6.4.0–v6.4.3 已推送打 tag；`12e35af`（2026-11-12）落地参考对标修复（P0-01 Go 5s 探活超时、P1-05/06/07 prewarm/token 竞态/want 缓存键）+ **四类验收流水线**（`run.py accept`：verify → UI 截图 70 断言 → 真实调用 46 项 → E2E 40 项 → `claude -p` 13 领域独立复审全 PASS）+ **MCP stdio 适配器**（`python run.py mcp`，5 工具，见 `docs/MCP.md`）。
+- **嫁接层**（`captchas/`）：实测 **27.9%**（门槛 20%）；arkose/predict 纯函数已可离线测（pycryptodome 进 dev 清单——2026-11-12 CI 红灯根因）。
+- **公开站**（`site/`）：14 路由、axe 0、Lighthouse 桌面 **100×4**；移动档已接 CI（`lighthouse:mobile`，Perf warn / 其余 error）。
+- **两页 UI**（`/`、`/console`）：UI 截图验收 **70/70**（9 状态 + 每按钮 + 键盘 + axe 深浅 + 320/360）。
+- **未闭环**：R-3 受阻（cfsolve 上游 `PreparedSession::try_new` 挂住，已离线定位根因待上游修复）；R-1 stealth 未验证（机械链路 PASS）；真机台账 **64/80、失败 5/5 → 按纪律全停**（`policy.md` §2）。D-1/D-2/D-3 维持未执行（用户决定 / 缺账号 / 需人工）。
+- **v6.5.0（本轮 2026-11-13）**：CI 红灯修复（pycryptodome + `_FakeRaw.close`）、T-05 文档命令对账门禁、T-07 cfsolve-setup 装配向导、T-10 故障注入 fixture、doctor `--gate` 并入 verify（14 步）、Go rate-limited 契约用例、captchas 27.9%、文档收敛为一份。
 
 ---
 
-## 1. 当前基线（全部实测）
+## 1. 当前基线（全部实测，2026-11-13）
 
 | 项 | 值 | 口径 |
 |---|---|---|
-| 版本 | `6.4.3`（`docs/facts.json`） | 已验证 |
-| Python 用例 | **1066 收集 / 1058 passed / 8 skipped** | 已验证（2026-11-11 复跑；第 8 个 skip 来自 `test_strategies.py:53`——本机装了 cloakbrowser，"缺失依赖"场景按设计转 skip） |
-| 覆盖率 | `solver/` **90%**（89.93%，门槛 80）· `captchas/` **22.21%**（门槛 20）· 65 模块逐模块登记 | 已验证 |
-| 模块级指标（接入事实源） | `engines.py` **100%** · `service.py` **3008 行** | 已验证（`docs/facts.json` + `validate-docs.mjs` 把关） |
-| Go | 52 个 `Test*`，`-race` 全绿（2026-11-11 复跑） | 已验证 |
+| 版本 | `6.4.3`（`docs/facts.json`；v6.5.0 发版时升） | 已验证 |
+| Python 用例 | **1256 passed / 8 skipped**（1264 收集） | 已验证（2026-11-13 全量复跑两轮；首轮 `test_process_metrics_present_and_sane` RSS 断言 flake 一次未复现，该断言已注明内核惰性记账特性） |
+| 覆盖率 | `solver/` **90.63%**（门槛 80）· `captchas/` **27.9%**（门槛 20）· 68 模块逐模块登记 | 已验证（`coverage.json` 2026-11-13） |
+| 模块级指标（接入事实源） | `engines.py` **100%** · `service.py` **3165 行** | 已验证（`docs/facts.json` + `validate-docs.mjs` 把关） |
+| Go | 58 个 `Test*`（含新增 rate-limited 契约用例），`-race` 全绿 | 已验证 |
 | findings | 54 条（三态 verdict），`validate-findings` exit 0 | 已验证 |
 | openapi | 14 个操作与源码路由双向一致 | 已验证 |
-| 公开站 | 17 HTML / 20 内联 hash / 12 可索引页 + 2 noindex + 404 | 已验证（`plans/证据/ui-v1/`） |
-| 初始 JS / 3D chunk / CSS | 233,186 B（227.7 KB）/ 241,853 B（236.2 KB）/ 5,438 B（gzip） | 已验证（`bundle.json`） |
-| 真机预算台账 | **60 / 80**，累计失败 **3 / 5** | 静态确认（`policy.md` §2，含 2026-11-10 R-E2E-4 两次） |
-| 本机真进程 E2E | `scripts/e2e_local.py` **40/40**（31.2s） | 已验证（`evidence/e2e-local-20261111.json`） |
-| 离线压测（2026-11-11 复跑） | hot **4929 QPS** / p50 1.54ms / p99 **3.43ms** / 0 错；cold 8/8 接受、**0 拒绝**、1.0 次求解/请求；share 4 进程两阶段均 **每轮只解 1 次** | 已验证（`scripts/loadtest.py` 三模式，证据 `evidence/loadtest-20261111-{hot,cold,share}.json`；v6.4 历史记录 hot 5483 QPS / p99 3.14ms） |
+| 四类验收 | UI **70/70**（axe 0）· realcalls **46/46** · E2E **40/40** · 复审 13 领域 PASS → `evidence/acceptance.json` overall=passed | 已验证（2026-11-12 `12e35af` 证据） |
+| 真机预算台账 | **64 / 80**，累计失败 **5 / 5 → 全停** | 已验证（`policy.md` §2 R-E2E-5：R-2 成功 2 次、R-3 失败 2 次） |
+| 本机真进程 E2E | `scripts/e2e_local.py` **40/40** | 已验证 |
+| 离线压测（2026-11-11 口径） | hot **4929 QPS** / p99 **3.43ms** / 0 错；cold 0 拒绝；share 每轮只解 1 次 | 已验证（`evidence/loadtest-20261111-*.json`） |
+| CI | `site-ci` 绿；`ci` 43253109450 红（pycryptodome 缺失 → arkose 覆盖率跌破门禁）→ **本轮已修，待推送验证** | 已验证（gh run 日志） |
 
 ---
 
@@ -88,12 +89,40 @@
 
 > 执行纪律（沿用，不重复定义）：红灯先行 → 改 → 定向验证；一卡一 commit；证据落盘 `plans/证据/`；L3 卡须独立 Critic；**不许为过门禁放宽断言**。真机动作一律先报批（`policy.md` §2）。
 
+### 3.0 v7.0 十二张任务卡 × B0–B15 参考对标修复（2026-11-13 对账）
+
+> v7.0 指南（`git show 9dbb3ab:计划书/下一步改进指南.md` 可找回）与参考对标审计
+> （原根目录《参考的结果计划指南.md》，202KB，已并入本文件后删除）的处置结果。
+> `12e35af`（2026-11-12）落地了大半，本轮（2026-11-13）补完剩余。
+
+| 卡 | 内容 | 状态 | 落点/证据 |
+|---|---|---|---|
+| T-01 | smoke 默认鉴权必红（P1-01） | ✅ 12e35af | `run.py` `_smoke_get` 带 Bearer；`tests/test_runpy.py` |
+| T-02 | SSRF 断言假阳性（P1-02） | ✅ 12e35af | 精确断言 400+`invalid-request`；负向用例在 `test_runpy.py` |
+| T-03 | verify 纳入 smoke + doctor `--gate` | ✅ 本轮 | verify 14 步（含 `doctor-gate(环境快照)`）；`scripts/doctor.py --gate`（仅 FAIL 非 0）；`tests/test_doctor_proxypool.py` 锁行为 |
+| T-04 | 版本锚点盲区（P2-02） | ✅ 12e35af | `validate-docs.mjs:66` 查项目规格版本行 |
+| T-05 | 文档命令对账 | ✅ 本轮 | `scripts/validate-doc-commands.mjs`（正负双向验证过）；进 CI；README/docs 承诺文档全覆盖 |
+| T-06 | 前端三类交互 E2E（P2-03） | ✅ 12e35af | `site.spec.ts:177-215`（theme 持久化 / 语言双向 / 移动菜单） |
+| T-07 | cfsolve-setup 装配向导（B2） | ✅ 本轮 | `scripts/cfsolve_setup.py` + `run.py cfsolve-setup` + run.ps1 ValidateSet 同步；15 条单测；本机实测（NASM 缺 → exit 1 给指向）；README + 纯协议文档已接 |
+| T-08 | 按域令牌桶限流（P2-05） | ✅ 12e35af + 本轮 | `solver/ratelimit.py`（默认 `--rate-per-host 1/30`，rate=0 禁用，只对冷求解计数，LRU 4096 域）；`/metrics` 拒绝计数；**本轮补 Go 契约用例** `TestPoolRateLimitedFailsOverWithoutBlamingNode`（429+rate-limited → failover 且不摘节点） |
+| T-09 | captchas 离线回放测试（P2-04） | ✅ 12e35af + 本轮 | `tests/test_captcha_pure.py`（aliyun/arkose/recaptcha/perimeterx/turnstile/cloudflare/awswaf/hcaptcha 纯函数）；整体 **27.9%**（卡目标 28% 的差距已在 coverage-policy `why` 里按"离线可测 vs 需真机"逐模块登记；arkose 门禁 34% 依赖 pycryptodome——**CI 红灯根因，已修**） |
+| T-10 | 故障注入测试 | ✅ 本轮 | `tests/conftest.py::fault_inject` fixture + `tests/test_fault_injection.py` 7 条（锁竞争有界重试 / 预算烧完降级 / 永久错误不烧预算 / 磁盘满明确上抛 / 坏库秒级失败 / set 中途故障恢复） |
+| T-11 | 未覆盖行逐段标注（P3-01/02） | ✅ 12e35af | `docs/覆盖率盲区标注.md`（逐段分类：不可达 / 需真机 / 故障注入 / 值得补） |
+| T-12 | 移动档 Lighthouse + 发版 | 部分 | 移动档已接 CI（12e35af）；**发版 v6.5.0 本轮进行中** |
+| B0 | Go 5s 探活超时（P0-01） | ✅ 12e35af | `cfsolve.go:592` 用 240s `hc`；慢 solver 用例 |
+| B11/B12/B13 | prewarm force / token 竞态 / want 缓存键（P1-05/06/07） | ✅ 12e35af | `prewarm.py:156`、`.env.lock`、`service.py` cache_key 含 want |
+| B1 | 验收链 | ✅ 12e35af | 同 T-01/02/03 |
+| B14 | detect 移植丢信号（P2-10） | ✅ 12e35af | `detect.py` 重写 + `tests/fixtures/detect/cases.json` + CI 特征表自检 |
+| B15 及其余 P2 | Go fail-open/共享切片/ErrNoChallenge、合规 NOTICE 等 | ✅ 12e35af | CHANGELOG `[Unreleased]` 全清单 |
+| P1-03/04 | 许可证合规（NPOSL-3.0 / captcha-solver 无 LICENSE） | ✅ 12e35af | `NOTICE` 记录 + `docs/检测-防护识别.md` 更正 + detect 自有整理 |
+| **R-3 上游修复** | cfsolve `PreparedSession::try_new` call_plan 挂住 | ⏸ 受阻 | 离线定位完成（`evidence/R-3-offline-20261111.json`）；等上游加 call-depth/step 预算；6 条 stage2 断言仍 skip |
+
 ### 3.1 工程线（9 项，**全部闭环**）
 
 | # | 项 | 状态 | 落地内容 | 验证证据 |
 |---|---|---|---|---|
 | **A1** | 文档数字漂移 + 模块指标进单一事实源 | ✅ | `docs/项目规格.md` L6/L7、`test_ledger.md` 三处数字清零（`engines.py` 57→**100%**、`service.py` 2073→**3006 行**）；`docs/facts.json` 增 `module_coverage{solver/engines.py}` 与 `service_py_lines`；`validate-docs.mjs` 增 3 条锚点规则 + "顶层键+子键"取值（子键本身含点，只在第一个点处切一次） | `validate-docs.mjs --no-test-run` → 12 处一致；负向注入（改回 57%/2073 行）→ exit 1 且指名模块；`gates.selftest.mjs` 新增 2 条样例（模块漂移、源文件行数漂移） |
-| **A2** | 两份同名状态文件合并 | ✅ | 上一轮已完成（根与 `plans/状态/` 两处均已删） | `git ls-files -- '*参考的结果计划指南*'` 为空 |
+| **A2** | 两份同名状态文件合并 | ✅ | 上一轮已完成（根与 `plans/状态/` 两处均已删）。2026-11-12 的 `12e35af` 曾把新版《参考的结果计划指南.md》（参考对标审计，202KB）提交到根目录；**本轮已按"文档收敛一份"决策并入本文件 §3.0 后删除**，git 历史可查（`git show 12e35af:参考的结果计划指南.md`） | `ls 参考的结果计划指南.md` 不存在；`git show 12e35af:...` 可找回 |
 | **C1** | 幻影参数 `--max-body-bytes` | ✅ | 413 的 `hint` 改为"上限固定 65536 字节（没有可调参数）"；`docs/API.md` 两处、`openapi.json` 的 413 描述同步；两条用例改为**断言不含**该参数名 | `rg max-body-bytes` 只剩 CHANGELOG 历史条目与归档计划书；`tests/test_request.py`、`tests/test_service.py` 相关用例全绿 |
 | **C2** | `/detect` 写审计 | ✅ | `_run_detect()` 成功/缓存命中/失败各一行，`_handle_detect()` 的传输层失败也一行；字段与 `/solve` 同族（`host`/`ok`/`elapsed`/`ms`/`cached`/`error_code`/`stage`/`path`） | 新增 3 条用例（成功、缓存命中 `cached=true`、缺 url 失败）——都断言审计文件里真的出现 `event=detect`；成功那条还断言 `GET /audit` **读得到**这一行（只落盘不算闭环）；早退路径的 `elapsed` 在入口取时间戳，不再是恒 0 的假值 |
 | **C3** | 404 进 `ErrorCode` + `HEAD`/`OPTIONS` 语义 | ✅ | 枚举增 `NOT_FOUND`/`METHOD_NOT_ALLOWED` 并入 `STATUS_BY_CODE`；两处裸字面量改成 `_send_not_found()`；新增 `do_HEAD`（复用 `do_GET`、经 `_write()` 丢 body）、`do_OPTIONS`（204 + `Allow`，**不带 `Content-Length`**：RFC 9110 §8.6 对 204 是 MUST NOT）、`PUT/DELETE/PATCH/TRACE/CONNECT` → **405 JSON + `Allow`**（原为 501 + `text/html`，与本服务"非 2xx 一律 JSON"的契约冲突）；405/OPTIONS 都**先读掉 body**（不读就回，残留字节会把同连接的下一条请求顶成 501 HTML —— 独立审查抓到的真缺陷） | 新增 9 条用例（HEAD 头与 GET 同源且无体、`Content-Length` 等于 GET body 长度、**同一条 keep-alive 连接上 HEAD→GET→OPTIONS→GET 不解体**、OPTIONS 204、三个方法 405、404 带 `not-found`、未鉴权仍 401）；`docs/API.md` 增"方法语义"段与两个错误码 |
@@ -118,20 +147,20 @@
 
 ### 3.3 待授权（6 项；需外部凭证或真机出站，未执行前不做）
 
-| # | 项 | 需要什么 | 成本 | 状态（2026-11-11 复核） |
+| # | 项 | 需要什么 | 成本 | 状态（2026-11-13 复核） |
 |---|---|---|---|---|
-| **R-1** | `captchas/` 任一求解器真机跑通（先选 aliyun 或 turnstile 单次） | cloakbrowser 二进制 + 真实挑战页 | 真机 1–2 次 | **受阻**（2026-11-10）：`pip install cloakbrowser` 成功（PyPI 0.7.2），但 Chromium 二进制下载要 license key——未 `cloakbrowser login` 时 `ensure_binary`/`launch_async` 抛 `CloakBrowserLicenseError`。免费档需在 cloakbrowser.dev claim 并邮件确认（人工）。2026-11-11 复核仍为 `License: none`、二进制未安装。见 `evidence/R-1-20261110.json` |
-| **R-2** | 真实 CF 站复验 `/audit` + 出口实测联动（确认 `egress_id` 与实测 IP 一致） | 允许出站 + 指定站点 | 真机 ≤3 次 | **部分闭环**（2026-11-10，用 1 次）：`run.py egress` 实测 IP `129.153.97.251` 与登记值一致；真机 `/solve` 的审计行落盘且 `GET /audit` 读回，`/shutdown` 也落审计。**未拿到 clearance**：camoufox 经 US 数据中心代理 120.5s 返回 `unsolved`，因此成功响应里的 `egress_id` 字段未观察到。2026-11-11 未重试（同站纪律 + 预算）。见 `evidence/R-2-20261110.json` |
-| **R-3** | 补一份走到 stage2 的 cfsolve 会话快照（解除 6 条结构断言 skip + `corpus/` 空态文案） | 允许打 1 个真实站 + 内存护栏 | 真机 1–2 次 | **受阻**（2026-11-10，用 1 次）：`challenge --page --solve` 在 deobfuscate 之后卡住，240s 被超时杀掉；产物只有 `page.html` / `orchestrator.js`(642,751B) / `orchestrator.deobfuscated.js`(543,811B)，**没有 `response.decoded.txt`**，6 条 stage2 断言仍 skip。2026-11-11 未重试（同站纪律 + 预算）。见 `evidence/R-3-20261110.json` 与 `plans/证据/r3-stage2-20261110/` |
-| **D-1** | 部署公开站（Cloudflare Pages 首选，支持 `_headers`）；绑定域名 | 域名 + API token | — | **未执行（用户决定）**：2026-11-11 用户明确本轮不部署公开站；`wrangler whoami` 仍为 `Not logged in`，环境无 `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID`。本地可部署性验证已完成：生产构建 + `verify:site`（14 路由 / axe 0）+ E2E 19/19 + Lighthouse 桌面 100×4 |
+| **R-1** | `captchas/` 任一求解器真机跑通（先选 aliyun 或 turnstile 单次） | 真实挑战页 + stealth 引擎 | 真机 1–2 次 | **机械链路 PASS（2026-11-11，R-E2E-5）**：`CLOAKBROWSER_BINARY_PATH` 指向本地 Playwright Chromium 绕过 license 校验，Turnstile 官方测试 sitekey 7.3s 出 token。**这不证明 stealth 有效**（本地 Chromium 无 CloakBrowser C++ 补丁、测试 key 恒通过）；真实挑战反检测验证按用户方向走自建 stealth 引擎。见 `evidence/R-1-20261111.json` |
+| **R-2** | 真实 CF 站复验 `/audit` + 出口实测联动 | 允许出站 + 指定站点 | 真机 ≤3 次 | **CLOSED（2026-11-11，R-E2E-5）**：udemy.com 端到端闭环——出口 158.101.195.118 与登记一致（批次前发现登记值过期，实测重登后求解，这正是要验证的联动）；solver 6.03s 拿 330B cf_clearance、响应 `egress_id=ip:158.101.195.118`；同 UA/Cookie 回放 200 / 199,790B / 正常标题；`/audit` 读回。见 `evidence/R-2-20261111.json` |
+| **R-3** | 补一份走到 stage2 的 cfsolve 会话快照（解除 6 条结构断言 skip） | 允许打 1 个真实站 + 内存护栏 | 真机 1–2 次 | **受阻 + 根因已定位（2026-11-11）**：两次尝试失败（scrapingcourse 260s 未到 stage2；udemy 无 `.cf-turnstile` 容器），累计失败 5/5 按纪律全停。**离线复现定位到根因**：本地回放服务器（打 127.0.0.1，零真实站请求）复现同一挂点——`PreparedSession::try_new → installed::read → Source::disassemble` 的 46 条指令后 `call_plan` 永不返回（handler 级递归/符号循环，1,000,000 语句预算压不住）。**修复在上游**：需给 call_plan/invoke 加调用深度与每 handler 步数预算。6 条 stage2 断言维持 skip。见 `evidence/R-3-20261111.json`、`evidence/R-3-offline-20261111.json` |
+| **D-1** | 部署公开站（Cloudflare Pages 首选，支持 `_headers`）；绑定域名 | 域名 + API token | — | **未执行（用户决定）**：2026-11-11 用户明确本轮不部署公开站；本地可部署性验证已完成。根 README 顶部公开站链接与 `llms.txt` 继续等部署后一并做 |
 | **D-2** | Search Console / Bing / 百度验证与 sitemap 提交；关键词 volume 回填 | 账号 + DNS/HTML 验证 | — | **未执行（缺账号）**：三个平台账号与 DNS/HTML 验证都不在本机；关键词 volume 也没有数据源（`site/seo/keywords.json` 只有意图矩阵） |
 | **D-3** | 英文母语审校签字（`site/content/EN-REVIEW.md` 的 Sign-off 仍 `(pending)`） | 人工 | — | **未执行（需人工）**：只有英文母语审校人能签；AI 不能代签，也不该把"机器读过一遍"写成签字 |
 
-> **R-1/R-2/R-3 的执行纪律**（照 `policy.md` §2 走，不另立流程）：台账 **60/80**、累计失败 **3/5**；同站串行 ≥30s；换出口必须换 `--egress-id`；累计失败 ≥5 立即全停。证据按现有模板落 `plans/证据/`（真机）与 `evidence/`（版本验收）。
+> **真机台账（`policy.md` §2，2026-11-11 R-E2E-5 后）**：累计 **64 / 80**，失败 **5 / 5 → 按纪律全停**。
+> R-2 成功 2 次（求解 + 回放）、R-3 失败 2 次。**任何真机动作在台账重置（用户批准）前一律不做**。
+> 同站串行 ≥30s；换出口必须换 `--egress-id`；证据落 `evidence/`（版本验收）。
 >
-> **2026-11-11 复核**：本轮**未消耗真机预算**（台账维持 **60/80**、失败 **3/5**）。R-1 的阻塞条件未变化（`cloakbrowser info` → `License: none`、二进制未安装）；R-2/R-3 依赖成功 clearance 与 stage2 样本，本轮不重试。公开站部署按用户 2026-11-11 的决定不执行。
->
-> **R-E2E-4 批次结果（2026-11-10）**：目标 `www.scrapingcourse.com/cloudflare-challenge`（公开定位为 CF 挑战练习页）。用 **2 次，全部失败**：① cfsolve 会话捕获 240s 未到 stage2；② 服务端 camoufox `/solve` 120s 未解出。**副产品**：装 `cloakbrowser` 后暴露了一个真缺陷——无许可证被报成 `500 internal` + traceback，已在 v6.4.1 归到 `not-configured`(503)，`e2e_local.py` 由 38/40 回到 **40/40**。计划与原始输出见 `plans/证据/real-machine-batch-20261110-plan.md`、`plans/证据/r2-20261110/`、`plans/证据/r3-stage2-20261110/`。
+> **历史批次**：R-E2E-4（2026-11-10）2 次全失败，副产品是 cloakbrowser 无许可证被误报 500 → v6.4.1 归位 `not-configured`；R-E2E-1/2/3（2026-11-04）glassdoor/udemy 端到端全部成功。全链见 `policy.md` §2。
 
 > 另有两项已知偏离授权，**仍未做**：根 README 顶部加公开站链接、`llms.txt`。两者都要求一个真实公开 origin，而 D-1 未部署——现在加链接只会指向不存在的站点，等部署落地后一并做。
 > **工作区注记**：根目录 `local_tok.txt`（43 B，本地求解 token）、`local_solver.log`、`tmpfin2/` 未跟踪且未被 `.gitignore` 覆盖。用户 2026-11-09 拍板**不处理**（接受相关产物随后续研究一起公开）；执行方提交时请用显式路径 `git add`，不要 `git add -A`。
@@ -163,12 +192,18 @@
 | **不支持的方法回 405 而非 501**（v6.4 C3，偏离卡片原写法） | 卡片原写「其余方法保持 501、只把 HTML 换成 JSON」。落地改成 **405 + `Allow`**：501 的语义是「服务不认识这个方法」，而这里是「该资源不支持它」；更关键的是 `ErrorCode ↔ STATUS_BY_CODE` 是对外契约，501 不在码表里 —— 硬用就得为 501 编一个错误码，或者让 `error_code` 与状态码对不上（按契约分支的客户端会走错）。405 同时满足 HTTP 语义与契约自洽 |
 | **`SolveWithOptions` 不碰本地缓存**（v6.4 C5） | 本地缓存键是「域 + 出口」，成立前提是产物恒为 `cf_clearance`；`want=turnstile` 之类是一次性 token，混进同一键会让后续 `Get` 拿到一个不是 clearance 的东西，且整个 TTL 内不会自愈。宁可要求调用方显式只用一次，也不给缓存埋语义雷 |
 
-### 4.3 参考库结论（2026-11-05 重分类后复核）
+### 4.3 参考库结论（2026-11-05 重分类后复核；2026-11-11 全库对标后增补）
 
 - `captcha-solver` 系已以 `captchas/` 形式接入；`ohmycaptcha`/`cipherwire__disarm`/`FlareSolverr` 已在 v6.2 整合；双档门禁/流量录制思路已落地。
 - `lightpanda-io__browser`（Zig 无头浏览器）：**P3 观察**，JS 覆盖面与反检测能力未知，不建议换底座。
 - 纯协议复现类（`CaptchaFoxChallengeSolver`、`CloudFlareInvisibleSolver`）与本项目 cfsolve 同族，无新增工程手段。
 - 付费 API 客户端（`nonecap`/`nopecha`/`cf-turnstile-token`）违反 `policy.md` 红线，排除。
+
+**2026-11-11 全库对标（原根目录《参考的结果计划指南.md》，1736 个项目枚举后）的存档结论**：
+
+- **Kasada**（`B00H0O__kasada-solver`，MIT）：唯一可落地形态是"浏览器 mint sidecar"（Node 20 + 真实 Chrome + 隔离 context mint `x-kpsdk-ct/cd/h/v`），像 FlareSolverr 一样做新 `BackendId`——**不是纯协议**；与零依赖/单进程定位冲突，成本高。真要做先过 `.claude/skills/cf-bypass-methods/SKILL.md` 的新增方法判定。
+- `scrapfly/Antibot-Detector`（NPOSL-3.0）与 `captcha-solver`（无 LICENSE）：许可结论已进 `NOTICE`，detect 特征表已改为自有整理（12e35af）。
+- 参考库中其余反爬/浏览器/代理项目均未产生新的可落地工程手段；完整逐项结论在 git 历史（`git show 12e35af:参考的结果计划指南.md` §附录 A）。
 
 ### 4.4 审查记录
 
@@ -205,16 +240,26 @@
 
 ## 6. 文档地图（合并后）
 
+> **文档收敛决策（2026-11-13，用户既定偏好）**：状态/待办/施工图只保留本文件一份。
+> 原《下一步改进指南.md》（v6.4.3→v7.0.0 施工图）的 12 张任务卡已全部处置（§3.0 对账表），
+> 原文删除（`git show 9dbb3ab:计划书/下一步改进指南.md` 可找回）；原根目录《参考的结果计划指南.md》
+> （1736 个参考项目对标审计 + B0–B15 卡片）的有约束力结论已并入 §3.0 与 §4，原文删除
+> （`git show 12e35af:参考的结果计划指南.md` 可找回）。CHANGELOG 对根指南的引用已改指本文件。
+
 | 想知道什么 | 看哪里 |
 |---|---|
 | 系统是什么、边界、承诺什么 | `docs/项目规格.md`（单一事实源，冲突以它为准） |
 | 接口契约 | `docs/API.md` + `docs/openapi.json` |
+| MCP 适配器（AI agent 接入） | `docs/MCP.md` |
 | 质量门禁（写死数值） | `policy.md` |
 | 测试数/覆盖率/版本号的单一事实源 | `docs/facts.json`（`validate-docs.mjs` 把关） |
+| 覆盖率为什么没到 100%（逐模块） | `docs/覆盖率盲区标注.md` + `docs/coverage-policy.json` 的 why |
 | 结论库 | `docs/findings.json`（54 条，`validate-findings.mjs`） |
 | **项目状态 / 待办 / 决策 / 风险** | **本文件** |
 | 历史施工图（v1.1→v5.0 四版） | `plans/archive/`（结论勿再引用） |
 | 验收证据 | `plans/证据/`（UI 与真机）+ `evidence/`（版本验收） |
+| 四类验收 SOP（可复跑流水线） | `python run.py accept`；`~/.claude/skills/four-track-acceptance/SKILL.md` |
+| cfsolve 纯协议构建 | `docs/纯协议-cfsolve.md`；装配诊断 `python run.py cfsolve-setup` |
 | 公开站本地构建/预览/部署 | `site/README.md` |
 | 过盾方法选型与新增方法判定标准 | `.claude/skills/cf-bypass-methods/SKILL.md` |
 | 验收项 ↔ 用例映射 | `test_ledger.md` |
@@ -243,3 +288,5 @@ cd site && npm run build && npm run csp && npm run verify:csp && npm run verify:
 *2026-11-10：v6.4.1——真进程 E2E 抓到「cloakbrowser 装了但无许可证」被误报 500，已归位到 `not-configured`；§3.3 真机批次 R-E2E-4 执行（R-2 部分闭环，R-1/R-3 受阻），台账 60/80、失败 3/5*
 *2026-11-10：v6.4.2——v6.4.1 的 `site-ci` 因站点 `/changelog` 未跟上事实源而红；补中英条目与 `tests.python` 1066，站点门禁复绿*
 *2026-11-11：v6.4.3——全量验收复核（无产品代码变更）；Python / Go / 门禁 / 40 项真进程 E2E / 两页 35 项浏览器 E2E / 站点 19 项 / 压测三模式 / Lighthouse 100×4 全部复跑通过*
+*2026-11-12：`12e35af`——参考对标修复落地（P0-01 Go 5s 探活、P1-05/06/07 prewarm/token 竞态/want 缓存键、合规 NOTICE）+ 四类验收流水线（`run.py accept`：UI 70 断言 / realcalls 46 / E2E 40 / 13 领域 `claude -p` 复审全 PASS）+ MCP stdio 适配器（`docs/MCP.md`）+ detect 重写；Python 1237 / Go 57；`site-ci` 绿、`ci` 红（pycryptodome 缺失，2026-11-13 修）*
+*2026-11-13：v6.5.0——CI 红灯修复（pycryptodome + `_FakeRaw.close`）；T-05 文档命令对账门禁、T-07 cfsolve-setup 向导、T-10 故障注入、doctor `--gate` 并入 verify（14 步）、Go rate-limited 契约用例；captchas 22.21%→**29.17%**；Python **1268** / Go **58**；Lighthouse 桌面 100×4+1 / 移动 99-100；**三份状态文档收敛为一份**（下一步改进指南 + 根参考指南并入后删除，git 可查）*

@@ -324,6 +324,9 @@ def main(argv: list[str] | None = None) -> int:
                     help="已登记的出口 IP，格式 scheme://host:port=1.2.3.4（可重复）")
     ap.add_argument("--verify-egress", action="store_true",
                     help="经每个出口实测 IP 回显并与登记值比对（会出站；默认不做）")
+    ap.add_argument("--gate", action="store_true",
+                    help="门禁模式：只有 FAIL 才非 0；WARN 记为通过但打印提示。"
+                         "给人看用默认模式（WARN→1 提醒），给 verify 聚合用 --gate（可选后端未配置≠项目坏了）")
     ap.add_argument("--egress-echo-url", default="",
                     help="IP 回显地址，默认用 Cloudflare /cdn-cgi/trace")
     args = ap.parse_args(argv)
@@ -354,6 +357,11 @@ def main(argv: list[str] | None = None) -> int:
                          ensure_ascii=False, indent=2))
     else:
         print(rep.render())
+    if args.gate:
+        # --gate：只有 FAIL 阻断。WARN 仍如实打印（render/json 里都有），但不阻断聚合。
+        if rep.worst() == WARN:
+            print("（--gate：WARN 不阻断；上面 ⚠ 项是环境优化提示，不是故障）")
+        return 2 if rep.worst() == FAIL else 0
     return rep.exit_code()
 
 

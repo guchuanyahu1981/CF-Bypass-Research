@@ -185,3 +185,54 @@ func TestPoolDo403DropsStaleCredentialWithoutBlamingNode(t *testing.T) {
 		t.Fatalf("403 应使该域凭证失效并重解一次：期望累计 2 次求解，实际 %d 次", c)
 	}
 }
+
+// rate-limited（T-08 契约用例）：服务端 --rate-per-host 开启后 429+rate-limited 是真实会
+// 产生的错误码。池层契约：要 failover（换节点有意义——别的节点有自己的桶），但不是节点的锅
+// （Failures 不累加、Healthy 不变）。与 busy 同族（saturationCodes），这里单独钉一条，
+// 防止将来有人把 rate-limited 从 saturationCodes 挪进 terminalCodes 而没有测试拦截。
+func TestPoolRateLimitedFailsOverWithoutBlamingNode(t *testing.T) {
+	limited := newFixedNode(t, http.StatusTooManyRequests,
+		map[string]any{"ok": false, "error_code": "rate-limited",
+			"error": "该域求解过于频繁", "stage": "admit"},
+		http.StatusOK, map[string]any{"ok": true, "state": "ready"})
+	defer limited.Close()
+	other := newFixedNode(t, http.StatusOK, goodClearance(2), http.StatusOK,
+		map[string]any{"ok": true, "state": "ready"})
+	defer other.Close()
+
+	p, err := NewPool([]string{limited.URL, other.URL}, WithPoolMaxFailures(2), WithPoolToken("test-token"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+
+	// 找一个"主节点就是 limited"的域，才能确定性地验证 failover 发生
+	host := ""
+	for i := 0; i < 500; i++ {
+		h := "r" + string(rune('a'+i%26)) + string(rune('a'+(i/26)%26)) + ".example.com"
+		if node := p.pick(h); node != nil && node.base == limited.URL {
+			host = h
+			break
+		}
+	}
+	if host == "" {
+		t.Skip("无法构造出主节点为 limited 的域，跳过（哈希分布问题）")
+	}
+
+	c, err := p.Get(context.Background(), "https://"+host+"/")
+	if err != nil {
+		t.Fatalf("rate-limited 应 failover 到其它节点并拿到凭证，实际 err=%v", err)
+	}
+	if c.CFClearance == "" {
+		t.Fatal("failover 后应拿到有效凭证")
+	}
+	if c := other.calls.Load(); c == 0 {
+		t.Fatal("failover 没有发生：其它节点零调用")
+	}
+	for _, nh := range p.Nodes() {
+		if nh.BaseURL == limited.URL && (nh.Failures != 0 || !nh.Healthy) {
+			t.Fatalf("rate-limited 不是节点的锅：Failures=%d Healthy=%v（摘节点会让池自我雪崩）",
+				nh.Failures, nh.Healthy)
+		}
+	}
+}

@@ -11,6 +11,10 @@
 >
 > 本仓库**不内置**二进制（体积 + 构建产物）。
 
+> **装配向导**：`python run.py cfsolve-setup` 一条命令检查工具链（Rust/MSVC/CMake/NASM/libclang）、
+> 上游仓库与本地补丁可应用性、已构建产物与 `CFSOLVE_BIN`/`CFSOLVE_PROFILE` 配置，
+> 输出"下一步该跑什么"。只诊断不代劳——构建仍要你在 vcvars64 环境手动执行。
+
 ## 零、本机构建实录（Windows，2026-11）
 
 | 步骤 | 结果 |

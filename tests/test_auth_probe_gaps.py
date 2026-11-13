@@ -109,6 +109,11 @@ class _FakeRaw:
             return chunk
         return b""
 
+    def close(self):
+        # HTTPError 继承链（addbase → _TemporaryFileWrapper）的 __del__ 会调 close()；
+        # 缺它时 GC 打出 unraisable AttributeError，挂在无关测试头上。
+        pass
+
 
 class _FakeHTTPError(urllib.error.HTTPError):
     """只提供 read()（无 read1）的 HTTPError，走 `_read_bounded` 的 AttributeError 分支。"""

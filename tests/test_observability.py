@@ -361,7 +361,10 @@ def test_process_metrics_present_and_sane(live_server):
     assert "cfsolve_process_peak_rss_bytes" in body
     assert "cfsolve_process_threads" in body
     rss = _scalar(body, "cfsolve_process_rss_bytes")
-    assert 10 * 1024 * 1024 < rss < 200 * 1024 * 1024, f"RSS 数值不合理：{rss}"
+    # 上限放宽到 400MB：live_server 是真子进程，全量并发跑时 Windows Working Set
+    # 会随 pytest 主进程的内存压力瞬时抬升（2026-11-13 全量跑两次踩中 200MB 上限，
+    # 单跑即过——测的是"指标存在且 sane"，不是"这个进程在压测下多胖"）。
+    assert 10 * 1024 * 1024 < rss < 400 * 1024 * 1024, f"RSS 数值不合理：{rss}"
     peak = _scalar(body, "cfsolve_process_peak_rss_bytes")
     # ⚠️ **不能断言 `peak >= rss`**（CI 抓到：84922368 vs 84926464，差 4KB）。
     # 内核的 `ru_maxrss` 按页记账惰性更新，会短暂滞后于 `/proc/self/statm` 的当前值，

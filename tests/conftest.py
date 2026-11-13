@@ -128,3 +128,41 @@ def _close_test_doubles(monkeypatch):
                 close()
             except Exception:
                 pass  # teardown 清理失败不掩盖测试本身的结论
+
+
+class FaultInjector:
+    """T-10：往任意可调用对象上注入前 N 次故障，之后放行真调用。
+
+    用法（故障注入测试的统一入口）：
+        fault_inject.attach(cache_mod, "_try_set_wal", times=2,
+                            exc=sqlite3.OperationalError("database is locked"))
+        ...构造真实对象，前 2 次调用抛 exc，之后走原实现...
+        assert fault_inject.calls == 3   # 确认重试真的发生
+    """
+
+    def __init__(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        self._mp = monkeypatch
+        self.calls = 0
+
+    def attach(self, owner: object, attr: str, *, times: int, exc: BaseException,
+               passthrough=None) -> None:
+        """owner.attr 前 times 次抛 exc，之后调 passthrough（缺省=原实现）。"""
+        orig = getattr(owner, attr)
+        state = {"n": 0}
+        self.calls = 0
+
+        def wrapper(*args, **kwargs):
+            state["n"] += 1
+            self.calls = state["n"]
+            if state["n"] <= times:
+                raise exc
+            real = passthrough if passthrough is not None else orig
+            return real(*args, **kwargs)
+
+        self._mp.setattr(owner, attr, wrapper)
+
+
+@pytest.fixture()
+def fault_inject(monkeypatch):
+    """故障注入 fixture：锁冲突 / 磁盘满 / 坏库都用它构造，不再各测试手写 wrapper。"""
+    yield FaultInjector(monkeypatch)

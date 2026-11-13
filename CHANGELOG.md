@@ -1,6 +1,28 @@
-## [Unreleased] - 2026-11-11
+## [Unreleased]
 
-主题：**修复 P0/P1 + 参考对标落地（B0–B15）**。详细状态与证据见 `参考的结果计划指南.md` 与 `evidence/R-*.json`。
+## [6.5.0] - 2026-11-13
+
+主题：**门禁可信 + 参考对标落地收口 + 文档收敛**。12e35af（2026-11-12）已落地参考对标修复（P0/P1）、四类验收流水线与 MCP 适配器；本版补完剩余任务卡并把三份状态文档收敛为一份。对账总表见 `计划书/CF-Bypass-Research-项目总状态与待办清单.md` §3.0。
+
+### 修复
+- CI 红灯（run 43253109450）：`pycryptodome` 缺出 dev 清单 → `test_captcha_pure.py` 的 Crypto 用例 skip → `captchas/arkose/predict.py` 覆盖率 35%→22% 跌破 34% 模块门禁。依赖补齐 + `_FakeRaw` 补 `close()`（HTTPError 继承链 `__del__` 的 unraisable 警告）。
+- `test_process_metrics_present_and_sane` RSS 上限 200→400MB（live_server 在全量并发下的 Working Set 抖动，测的是指标存在性不是进程胖瘦）。
+
+### 新增
+- **T-05** `scripts/validate-doc-commands.mjs`：README/docs 里的 run.* 子命令必须真实存在（正负双向验证），进 CI。
+- **T-07** `run.py cfsolve-setup`（+run.ps1 同步）：cfsolve 装配向导——查 Rust/MSVC/CMake/NASM/libclang、仓库/补丁/产物/配置，只诊断不代劳；15 条单测。
+- **T-10** `tests/conftest.py::fault_inject` fixture + `tests/test_fault_injection.py` 7 条：锁竞争有界重试、预算烧完降级、永久错误不烧预算、磁盘满明确上抛、坏库秒级失败。
+- **doctor --gate**：门禁模式（仅 FAIL 非 0，WARN 打印不阻断）；verify 升 14 步，尾部加 `doctor-gate(环境快照)`。
+- **Go 契约用例** `TestPoolRateLimitedFailsOverWithoutBlamingNode`：429+rate-limited → failover 且不摘节点（T-08 的池端契约钉死）。
+- captchas 纯函数测试第二批：turnstile `_error_codes`、cloudflare `_clearance`、perimeterx `_result` 四终态、recaptcha `_build_v2_page`/classifier 校验、awswaf `_waf_token`/`_title_is_block`、hcaptcha `_grid_overlay`。整体 **29.17%**（v6.4.3 的 22.21% → 27.9% → 29.17%）。
+
+### 文档
+- 三份状态文档收敛为一份：`计划书/CF-Bypass-Research-项目总状态与待办清单.md`（§3.0 是 v7.0 十二卡 × B0–B15 的逐卡对账）。原《下一步改进指南.md》与根目录《参考的结果计划指南.md》删除，git 历史可查。
+
+### 验证
+- Python **1259 passed / 8 skipped**；`solver/` **90.63%**、`captchas/` **29.17%**（68 模块门禁全过）。
+- Go **58 Test** `-race` 全绿 + vet；门禁 validate-docs / openapi / findings / gates.selftest 24/24 / doc-commands 全绿。
+- 真机台账 **64/80、失败 5/5 → 全停**（R-E2E-5：R-2 CLOSED udemy 6.03s 闭环；R-3 根因定位待上游）。
 
 ### 修复
 - P0：Go 客户端 `/solve` 误用 5s 探活 client（冷求解必超时）→ 改用 240s `hc`，补慢 solver 用例。
