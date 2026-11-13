@@ -810,7 +810,7 @@ JSONL 或 `GET /logs`。
 | `--token-file` | 环境变量 `CF_SOLVE_TOKEN_FILE`，未设置时 `.env` | token 文件；首启自动生成 `CF_SOLVE_TOKEN=`。容器里务必指到**挂载卷**（如 `/data/.env`）：token 变了派生密钥就变，共享缓存会被整库作废 |
 | `--no-auth` | 关 | 关闭鉴权，**仅限本机调试** |
 | `--allow-private-hosts` | 关 | 允许访问私网/回环目标，**仅限本机联调** |
-| `--headed` | 关 | 有头模式，调试用 |
+| `--headed` | 关 | 有头模式。**Clerk/CF `managed` 挑战（2026-11-13 实测）无头浏览器 100% 解不出**——widget 挂 shadow DOM 但 token 永不回调；`--headed` 后 14s 出票。生产批量注册**必开**。副作用：桌面常驻浏览器窗口 |
 
 ### 两个启动即失败的硬冲突（不是警告）
 

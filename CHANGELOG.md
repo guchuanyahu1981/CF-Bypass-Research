@@ -1,5 +1,14 @@
 ## [Unreleased]
 
+### 运维实证（2026-11-13，Uncensored 万号批量）
+
+- **Clerk Turnstile 升级 `managed` 挑战**：无头浏览器（camoufox headless / pydoll headless）100% 解不出——widget 在 shadow DOM 里渲染、`cf-turnstile-response` 挂上但 token 永不回调、`error-callback` 无错误码（纯等待，不是拒绝）。换任何出口（住宅/机房/直连）结果相同 ⇒ 指纹维度而非 IP 维度。
+- **破局**：`--headed`。同出口同时段 14s 出票（无头 0/50+，有头秒解）。`--headed` 从"调试用"升格为 managed 站生产必开。
+- **票绑出口 IP**：Turnstile token 绑定解票出口；注册请求走别的出口 ⇒ Clerk 判 `captcha_invalid`。生产拓扑必须 worker↔solver 严格 1:1（每实例 `--proxy` 独占一个出口，worker 出口=同出口）。
+- **camoufox 长跑退化（假活）**：`/health` 持续 ok 但解不出票。判定：`/stats.last_success_at` 超 25 分钟即重启实例。参见消费侧 `SeedanceAI/tools/solver_guard_all.py`（计划任务每 10 分钟巡检）。
+- **429 惩罚性限流**（aifreeforever 站实测）：被限流后继续请求会**刷新封禁窗口**——正确姿势是立即完全停止，等窗口自然过期。
+- 僵尸浏览器进程堆积（多次重启后 50+ camoufox）会干扰新实例；guard 重启时需先清进程树。
+
 ## [6.5.0] - 2026-11-13
 
 主题：**门禁可信 + 参考对标落地收口 + 文档收敛**。12e35af（2026-11-12）已落地参考对标修复（P0/P1）、四类验收流水线与 MCP 适配器；本版补完剩余任务卡并把三份状态文档收敛为一份。对账总表见 `计划书/CF-Bypass-Research-项目总状态与待办清单.md` §3.0。
