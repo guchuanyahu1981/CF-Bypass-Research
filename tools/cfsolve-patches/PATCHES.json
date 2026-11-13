@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "upstream": "https://github.com/chris124567/cfsolve",
-  "upstream_ref": "master@2026-10-29",
+  "upstream_ref": "master@2026-10-29 + 4 local patches (local repo D:/cfsolve-upstream)",
   "patches": [
     {
       "id": "windows-and-capture-fixes",
@@ -92,6 +92,25 @@
         "R-stage2-detail-preserved",
         "R-stage2-assertions-no-masking",
         "R-stage2-counter-first-named-write-stable"
+      ],
+      "status": "applied"
+    },
+    {
+      "id": "call-depth-limit-20261113",
+      "file": "cfsolve-call-depth-limit-20261113.patch",
+      "upstream_commit": "local dbe878e (diff from its parent)",
+      "files": [
+        "src/vm/interpret/evaluate.rs",
+        "src/vm/interpret/run.rs"
+      ],
+      "hunks": 5,
+      "purpose": "R-3 根因修复：Run 增加 depth 计数，Run::body 超 MAXIMUM_CALL_DEPTH(256) 返回 Stop::unsupported。invoke→script→call_plan 的无界符号递归（每层克隆累积的符号参数树）既有循环上限与语句预算都压不住，installed::read 永不返回；超限后该路径记 fault，全 fault 时这段字节判为不可解码并报告 pc，不再挂死",
+      "evidence": "evidence/R-3-calldepth-20261113.json（离线回放，零真实站请求）",
+      "memory_note": "全链路 challenge.exe 回放峰值 ~5GB（挂点=符号指数膨胀）。复现/回归必须走 scripts/run_limited.py --max-mb 2048（2026-11-03 铁律；2026-11-13 又爆了一次 40GB 内存，孤儿 uncensored_bulk + challenge.exe + Orca 重启三方叠加）",
+      "known_gap": "补丁只把挂死变成结构化失败（报告 pc/原因），不让该变体求解收敛——收敛需要上游跟进 call_plan/invoke 的符号策略。stage2 结构断言维持 skip",
+      "rollback": "git apply -R cfsolve-call-depth-limit-20261113.patch",
+      "assertion_ids": [
+        "R-vm-call-depth-bounded"
       ],
       "status": "applied"
     }

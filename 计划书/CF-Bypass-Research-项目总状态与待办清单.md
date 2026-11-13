@@ -18,11 +18,11 @@
 ## 0. 一页速览
 
 - **服务面**（`solver/` + `gocfsolve/`）：v6.4.0–v6.4.3 已推送打 tag；`12e35af`（2026-11-12）落地参考对标修复（P0-01 Go 5s 探活超时、P1-05/06/07 prewarm/token 竞态/want 缓存键）+ **四类验收流水线**（`run.py accept`：verify → UI 截图 70 断言 → 真实调用 46 项 → E2E 40 项 → `claude -p` 13 领域独立复审全 PASS）+ **MCP stdio 适配器**（`python run.py mcp`，5 工具，见 `docs/MCP.md`）。
-- **嫁接层**（`captchas/`）：实测 **27.9%**（门槛 20%）；arkose/predict 纯函数已可离线测（pycryptodome 进 dev 清单——2026-11-12 CI 红灯根因）。
+- **嫁接层**（`captchas/`）：实测 **29.17%**（门槛 20%）；arkose/predict 纯函数已可离线测（pycryptodome 进 dev 清单——2026-11-12 CI 红灯根因，已修）。
 - **公开站**（`site/`）：14 路由、axe 0、Lighthouse 桌面 **100×4**；移动档已接 CI（`lighthouse:mobile`，Perf warn / 其余 error）。
 - **两页 UI**（`/`、`/console`）：UI 截图验收 **70/70**（9 状态 + 每按钮 + 键盘 + axe 深浅 + 320/360）。
-- **未闭环**：R-3 受阻（cfsolve 上游 `PreparedSession::try_new` 挂住，已离线定位根因待上游修复）；R-1 stealth 未验证（机械链路 PASS）；真机台账 **64/80、失败 5/5 → 按纪律全停**（`policy.md` §2）。D-1/D-2/D-3 维持未执行（用户决定 / 缺账号 / 需人工）。
-- **v6.5.0（本轮 2026-11-13）**：CI 红灯修复（pycryptodome + `_FakeRaw.close`）、T-05 文档命令对账门禁、T-07 cfsolve-setup 装配向导、T-10 故障注入 fixture、doctor `--gate` 并入 verify（14 步）、Go rate-limited 契约用例、captchas 27.9%、文档收敛为一份。
+- **未闭环**：R-3 根因已定位且**本地补丁已入库**（调用深度上限；见 §3.3 R-3 行），待上游 PR + MB 级回归单测；R-1 stealth 未验证（机械链路 PASS）；真机台账 **64/80、失败 5/5 → 按纪律全停**（`policy.md` §2）。D-1/D-2/D-3 维持未执行（用户决定 / 缺账号 / 需人工）。
+- **v6.5.0（2026-11-13）**：已发版——tag `v6.5.0` 已推送，`ci`（run 43344657947）与 `site-ci`（run 43346349231）双绿。内容：CI 红灯修复（pycryptodome + `_FakeRaw.close`）、T-05 文档命令对账门禁、T-07 cfsolve-setup 装配向导、T-10 故障注入 fixture、doctor `--gate` 并入 verify（14 步）、Go rate-limited 契约用例、captchas 22.21%→**29.17%**、文档收敛为一份。
 
 ---
 
@@ -30,9 +30,9 @@
 
 | 项 | 值 | 口径 |
 |---|---|---|
-| 版本 | `6.4.3`（`docs/facts.json`；v6.5.0 发版时升） | 已验证 |
-| Python 用例 | **1256 passed / 8 skipped**（1264 收集） | 已验证（2026-11-13 全量复跑两轮；首轮 `test_process_metrics_present_and_sane` RSS 断言 flake 一次未复现，该断言已注明内核惰性记账特性） |
-| 覆盖率 | `solver/` **90.63%**（门槛 80）· `captchas/` **27.9%**（门槛 20）· 68 模块逐模块登记 | 已验证（`coverage.json` 2026-11-13） |
+| 版本 | `6.5.0`（`docs/facts.json`） | 已验证 |
+| Python 用例 | **1260 passed / 8 skipped**（1268 收集） | 已验证（2026-11-13 本机全量复跑 `python -m pytest tests/ -q`，168s；CI run 43344657947 上 3.11/3.12 均 **1253 passed / 15 skipped**，差值是 Windows 专属用例在本机执行、CI Linux 跳过） |
+| 覆盖率 | `solver/` **90.63%**（门槛 80）· `captchas/` **29.17%**（门槛 20）· 68 模块逐模块登记 | 已验证（`coverage.json` 2026-11-13 + `check-coverage.mjs` 全过） |
 | 模块级指标（接入事实源） | `engines.py` **100%** · `service.py` **3165 行** | 已验证（`docs/facts.json` + `validate-docs.mjs` 把关） |
 | Go | 58 个 `Test*`（含新增 rate-limited 契约用例），`-race` 全绿 | 已验证 |
 | findings | 54 条（三态 verdict），`validate-findings` exit 0 | 已验证 |
@@ -41,7 +41,7 @@
 | 真机预算台账 | **64 / 80**，累计失败 **5 / 5 → 全停** | 已验证（`policy.md` §2 R-E2E-5：R-2 成功 2 次、R-3 失败 2 次） |
 | 本机真进程 E2E | `scripts/e2e_local.py` **40/40** | 已验证 |
 | 离线压测（2026-11-11 口径） | hot **4929 QPS** / p99 **3.43ms** / 0 错；cold 0 拒绝；share 每轮只解 1 次 | 已验证（`evidence/loadtest-20261111-*.json`） |
-| CI | `site-ci` 绿；`ci` 43253109450 红（pycryptodome 缺失 → arkose 覆盖率跌破门禁）→ **本轮已修，待推送验证** | 已验证（gh run 日志） |
+| CI | **双绿**：`ci` run 43344657947、`site-ci` run 43346349231（均在 `72c4c96` = tag `v6.5.0` 上） | 已验证（gh run 日志） |
 
 ---
 
@@ -105,10 +105,10 @@
 | T-06 | 前端三类交互 E2E（P2-03） | ✅ 12e35af | `site.spec.ts:177-215`（theme 持久化 / 语言双向 / 移动菜单） |
 | T-07 | cfsolve-setup 装配向导（B2） | ✅ 本轮 | `scripts/cfsolve_setup.py` + `run.py cfsolve-setup` + run.ps1 ValidateSet 同步；15 条单测；本机实测（NASM 缺 → exit 1 给指向）；README + 纯协议文档已接 |
 | T-08 | 按域令牌桶限流（P2-05） | ✅ 12e35af + 本轮 | `solver/ratelimit.py`（默认 `--rate-per-host 1/30`，rate=0 禁用，只对冷求解计数，LRU 4096 域）；`/metrics` 拒绝计数；**本轮补 Go 契约用例** `TestPoolRateLimitedFailsOverWithoutBlamingNode`（429+rate-limited → failover 且不摘节点） |
-| T-09 | captchas 离线回放测试（P2-04） | ✅ 12e35af + 本轮 | `tests/test_captcha_pure.py`（aliyun/arkose/recaptcha/perimeterx/turnstile/cloudflare/awswaf/hcaptcha 纯函数）；整体 **27.9%**（卡目标 28% 的差距已在 coverage-policy `why` 里按"离线可测 vs 需真机"逐模块登记；arkose 门禁 34% 依赖 pycryptodome——**CI 红灯根因，已修**） |
+| T-09 | captchas 离线回放测试（P2-04） | ✅ 12e35af + 本轮 | `tests/test_captcha_pure.py`（aliyun/arkose/recaptcha/perimeterx/turnstile/cloudflare/awswaf/hcaptcha 纯函数）；整体 **29.17%**（卡目标 28% 的差距已在 coverage-policy `why` 里按"离线可测 vs 需真机"逐模块登记；arkose 门禁 34% 依赖 pycryptodome——**CI 红灯根因，已修**） |
 | T-10 | 故障注入测试 | ✅ 本轮 | `tests/conftest.py::fault_inject` fixture + `tests/test_fault_injection.py` 7 条（锁竞争有界重试 / 预算烧完降级 / 永久错误不烧预算 / 磁盘满明确上抛 / 坏库秒级失败 / set 中途故障恢复） |
 | T-11 | 未覆盖行逐段标注（P3-01/02） | ✅ 12e35af | `docs/覆盖率盲区标注.md`（逐段分类：不可达 / 需真机 / 故障注入 / 值得补） |
-| T-12 | 移动档 Lighthouse + 发版 | 部分 | 移动档已接 CI（12e35af）；**发版 v6.5.0 本轮进行中** |
+| T-12 | 移动档 Lighthouse + 发版 | ✅ 本轮 | 移动档已接 CI（12e35af）；**v6.5.0 已发版**——tag 推送、`ci`/`site-ci` 双绿、`evidence/RELEASE-6.5.0.json` 落盘 |
 | B0 | Go 5s 探活超时（P0-01） | ✅ 12e35af | `cfsolve.go:592` 用 240s `hc`；慢 solver 用例 |
 | B11/B12/B13 | prewarm force / token 竞态 / want 缓存键（P1-05/06/07） | ✅ 12e35af | `prewarm.py:156`、`.env.lock`、`service.py` cache_key 含 want |
 | B1 | 验收链 | ✅ 12e35af | 同 T-01/02/03 |
@@ -151,7 +151,7 @@
 |---|---|---|---|---|
 | **R-1** | `captchas/` 任一求解器真机跑通（先选 aliyun 或 turnstile 单次） | 真实挑战页 + stealth 引擎 | 真机 1–2 次 | **机械链路 PASS（2026-11-11，R-E2E-5）**：`CLOAKBROWSER_BINARY_PATH` 指向本地 Playwright Chromium 绕过 license 校验，Turnstile 官方测试 sitekey 7.3s 出 token。**这不证明 stealth 有效**（本地 Chromium 无 CloakBrowser C++ 补丁、测试 key 恒通过）；真实挑战反检测验证按用户方向走自建 stealth 引擎。见 `evidence/R-1-20261111.json` |
 | **R-2** | 真实 CF 站复验 `/audit` + 出口实测联动 | 允许出站 + 指定站点 | 真机 ≤3 次 | **CLOSED（2026-11-11，R-E2E-5）**：udemy.com 端到端闭环——出口 158.101.195.118 与登记一致（批次前发现登记值过期，实测重登后求解，这正是要验证的联动）；solver 6.03s 拿 330B cf_clearance、响应 `egress_id=ip:158.101.195.118`；同 UA/Cookie 回放 200 / 199,790B / 正常标题；`/audit` 读回。见 `evidence/R-2-20261111.json` |
-| **R-3** | 补一份走到 stage2 的 cfsolve 会话快照（解除 6 条结构断言 skip） | 允许打 1 个真实站 + 内存护栏 | 真机 1–2 次 | **受阻 + 根因已定位（2026-11-11）**：两次尝试失败（scrapingcourse 260s 未到 stage2；udemy 无 `.cf-turnstile` 容器），累计失败 5/5 按纪律全停。**离线复现定位到根因**：本地回放服务器（打 127.0.0.1，零真实站请求）复现同一挂点——`PreparedSession::try_new → installed::read → Source::disassemble` 的 46 条指令后 `call_plan` 永不返回（handler 级递归/符号循环，1,000,000 语句预算压不住）。**修复在上游**：需给 call_plan/invoke 加调用深度与每 handler 步数预算。6 条 stage2 断言维持 skip。见 `evidence/R-3-20261111.json`、`evidence/R-3-offline-20261111.json` |
+| **R-3** | 补一份走到 stage2 的 cfsolve 会话快照（解除 6 条结构断言 skip） | 允许打 1 个真实站 + 内存护栏 | 真机 1–2 次 | **根因已定位 + 本地修复已落地（2026-11-13）**：真机两次失败后按纪律全停（2026-11-11）；离线复现定位根因——`invoke → script → call_plan` 无界符号递归（每层克隆累积的符号参数树），循环上限与语句预算都压不住。**本地补丁已写好并入库**：`tools/cfsolve-patches/cfsolve-call-depth-limit-20261113.patch`（Run 深度计数，超 256 层返回 Unsupported → 该字节判为不可解码并报告 pc，不再挂死）；`cargo test --lib` 245 passed（1 个 pre-existing socks5 失败与基线一致）。**边界**：补丁只把挂死变成结构化失败，不让该变体收敛；下一步 = 向上游提 PR + 一个 MB 级 Rust 回归单测。复现/回归**必须**走 `scripts/run_limited.py --max-mb 2048`（全链路回放峰值 ~5GB，2026-11-13 已因未挂上限叠加其他负载把 40GB 内存打满一次）。6 条 stage2 断言维持 skip。见 `evidence/R-3-calldepth-20261113.json`、`evidence/R-3-offline-20261111.json` |
 | **D-1** | 部署公开站（Cloudflare Pages 首选，支持 `_headers`）；绑定域名 | 域名 + API token | — | **未执行（用户决定）**：2026-11-11 用户明确本轮不部署公开站；本地可部署性验证已完成。根 README 顶部公开站链接与 `llms.txt` 继续等部署后一并做 |
 | **D-2** | Search Console / Bing / 百度验证与 sitemap 提交；关键词 volume 回填 | 账号 + DNS/HTML 验证 | — | **未执行（缺账号）**：三个平台账号与 DNS/HTML 验证都不在本机；关键词 volume 也没有数据源（`site/seo/keywords.json` 只有意图矩阵） |
 | **D-3** | 英文母语审校签字（`site/content/EN-REVIEW.md` 的 Sign-off 仍 `(pending)`） | 人工 | — | **未执行（需人工）**：只有英文母语审校人能签；AI 不能代签，也不该把"机器读过一遍"写成签字 |
@@ -290,3 +290,4 @@ cd site && npm run build && npm run csp && npm run verify:csp && npm run verify:
 *2026-11-11：v6.4.3——全量验收复核（无产品代码变更）；Python / Go / 门禁 / 40 项真进程 E2E / 两页 35 项浏览器 E2E / 站点 19 项 / 压测三模式 / Lighthouse 100×4 全部复跑通过*
 *2026-11-12：`12e35af`——参考对标修复落地（P0-01 Go 5s 探活、P1-05/06/07 prewarm/token 竞态/want 缓存键、合规 NOTICE）+ 四类验收流水线（`run.py accept`：UI 70 断言 / realcalls 46 / E2E 40 / 13 领域 `claude -p` 复审全 PASS）+ MCP stdio 适配器（`docs/MCP.md`）+ detect 重写；Python 1237 / Go 57；`site-ci` 绿、`ci` 红（pycryptodome 缺失，2026-11-13 修）*
 *2026-11-13：v6.5.0——CI 红灯修复（pycryptodome + `_FakeRaw.close`）；T-05 文档命令对账门禁、T-07 cfsolve-setup 向导、T-10 故障注入、doctor `--gate` 并入 verify（14 步）、Go rate-limited 契约用例；captchas 22.21%→**29.17%**；Python **1268** / Go **58**；Lighthouse 桌面 100×4+1 / 移动 99-100；**三份状态文档收敛为一份**（下一步改进指南 + 根参考指南并入后删除，git 可查）*
+*2026-11-13：R-3 本地修复入库——`tools/cfsolve-patches/cfsolve-call-depth-limit-20261113.patch`（Run 调用深度上限 256，挂点变结构化失败）+ `evidence/R-3-calldepth-20261113.json`；PATCHES.json 登记；**内存事故记录**：全链路回放未挂 run_limited 上限（峰值 ~5GB）叠加无关批量负载与 Orca 重启把 40GB 打满——任何 cfsolve 回放/构建一律 `scripts/run_limited.py --max-mb 2048`（重申 2026-11-03 铁律）*

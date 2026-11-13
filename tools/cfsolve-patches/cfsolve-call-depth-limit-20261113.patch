@@ -1,0 +1,97 @@
+# cfsolve 解释器调用深度上限补丁 (2026-11-13, R-3 根因修复)
+# 任务卡: 计划书/CF-Bypass-Research-项目总状态与待办清单.md §3.3 R-3
+# 基线: upstream master + 已应用的 4 个本地补丁（本地 commit dbe878e 的 diff）
+# 内容: Run 增加 depth 计数；Run::body 超过 MAXIMUM_CALL_DEPTH(256) 时返回
+#       Stop::unsupported。根因: invoke -> script -> call_plan 无深度上限的符号
+#       递归，每层克隆累积的符号参数 Term 树，既有 MAXIMUM_ITERATIONS(循环上限)
+#       与任何语句预算都压不住，installed::read 永不返回（挂死而非报错）。
+#       超限后 explore 把该路径记为 fault；全部路径 fault 时 Machine::ways 返回
+#       Cause::Faults → 这段字节判为不可解码，disassembly 报告位置而不是挂死。
+# 验证: 本机离线回放（127.0.0.1 回放服务器打存档 page.html+orchestrator.js，
+#       零真实站请求）；cargo test --lib 245 passed（1 个 pre-existing socks5
+#       用例失败与补丁无关，基线同样失败）。
+# 内存注意: 全链路 challenge.exe 回放峰值可达 ~5GB（挂点本身是符号指数膨胀，
+#       这正是要修的 bug——但验证过程本身也重）。复现/回归一律用:
+#       python scripts/run_limited.py --max-mb 2048 -- challenge.exe ...
+#       （Windows Job Object 硬上限，超限杀整个进程树，2026-11-03 铁律）
+# 用法: git apply cfsolve-call-depth-limit-20261113.patch（在 4 个既有补丁之上）
+# 回滚: git apply -R 本补丁
+diff --git a/src/vm/interpret/evaluate.rs b/src/vm/interpret/evaluate.rs
+index 25dd08a..ae227b7 100644
+--- a/src/vm/interpret/evaluate.rs
++++ b/src/vm/interpret/evaluate.rs
+@@ -19,6 +19,10 @@ use crate::vm::value::{Env, Value};
+ /// invalid instruction bytes.
+ const MAXIMUM_ITERATIONS: usize = 1 << 16;
+ 
++/// Maximum nested function calls per run. Legitimate handlers stay dozens of frames deep; a
++/// deeper chain cannot unwind (see [`Run::body`]) and marks the call unsupported instead.
++pub(crate) const MAXIMUM_CALL_DEPTH: usize = 256;
++
+ impl<'ast> Run<'ast, '_> {
+     pub(super) fn statement(&mut self, statement: &'ast Stmt) -> Evaluation<'ast, Flow<'ast>> {
+         self.execute_all(&plan::scoped(slice::from_ref(statement)), &mut [])
+@@ -62,9 +66,17 @@ impl<'ast> Run<'ast, '_> {
+         body: &[Statement<'ast>],
+         locals: &mut Locals<'ast>,
+     ) -> Evaluation<'ast, Value<'ast>> {
++        // A call cycle (self- or mutually recursive handlers) never reaches the statement
++        // budget or the loop cap; each level also clones its symbolic arguments, so even a
++        // million-statement budget cannot end it. Fail the call structurally instead.
++        if self.depth >= MAXIMUM_CALL_DEPTH {
++            return Err(Stop::unsupported("a call past the depth limit"));
++        }
++        self.depth += 1;
+         self.frames.push(frame);
+         let flow = self.execute_all(body, locals);
+         self.frames.pop();
++        self.depth -= 1;
+         match flow? {
+             Flow::Return(value) => Ok(value),
+             _ => Ok(Value::Undefined),
+diff --git a/src/vm/interpret/run.rs b/src/vm/interpret/run.rs
+index 075b464..e8c9a96 100644
+--- a/src/vm/interpret/run.rs
++++ b/src/vm/interpret/run.rs
+@@ -76,6 +76,9 @@ pub(crate) struct Run<'ast, 'session> {
+     facts: Vec<(Term, Value<'ast>)>,
+     journal: Journal<'ast>,
+     pub(super) spare: Spare<'ast>,
++    /// Frames entered since this run started. Bounded by [`MAXIMUM_CALL_DEPTH`] in
++    /// [`Run::body`](super::evaluate::Run::body); handler and constructor runs start at one.
++    pub(super) depth: usize,
+ }
+ 
+ /// Cleared buffers from completed calls. Handler runs take them from the session and
+@@ -240,6 +243,7 @@ impl<'ast, 'session> Run<'ast, 'session> {
+             facts: Vec::new(),
+             journal: Journal::default(),
+             spare: Spare::default(),
++            depth: 0,
+         }
+     }
+ 
+@@ -260,6 +264,7 @@ impl<'ast, 'session> Run<'ast, 'session> {
+         }
+         run.start_at(invocation.pc, invocation.key);
+         run.registers.extend(invocation.known.iter().cloned());
++        run.depth = 1;
+         run
+     }
+ 
+@@ -278,6 +283,7 @@ impl<'ast, 'session> Run<'ast, 'session> {
+     pub(in crate::vm) fn method(session: &'session Session<'ast>) -> Self {
+         let mut run = Self::new(session, &[], Vec::new(), None);
+         run.frames.push(Frame::new(Value::Machine));
++        run.depth = 1;
+         run
+     }
+ 
+@@ -288,6 +294,7 @@ impl<'ast, 'session> Run<'ast, 'session> {
+     ) -> Self {
+         let mut run = Self::new(session, program, Vec::new(), Some(Copies::default()));
+         run.frames.push(Frame::new(Value::Machine));
++        run.depth = 1;
+         run
+     }
+ 

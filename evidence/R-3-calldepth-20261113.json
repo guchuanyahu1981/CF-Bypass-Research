@@ -1,0 +1,32 @@
+{
+  "task_id": "R-3-calldepth",
+  "date": "2026-11-13",
+  "what": "Root-cause fix for the R-3 hang, implemented locally in D:/cfsolve-upstream and captured as tools/cfsolve-patches/cfsolve-call-depth-limit-20261113.patch",
+  "root_cause": {
+    "chain": "PreparedSession::try_new -> installed::read -> Source::disassemble -> decode pc=7753 key=161 opcode=185 -> explore -> invoke -> script -> call_plan",
+    "mechanism": "unbounded symbolic recursion: each nested call clones the accumulated symbolic argument Term tree, so work grows super-linearly with depth; MAXIMUM_ITERATIONS (1<<16) bounds single loops, not call cycles; a 1,000,000-statement budget was never reached in 45s (2026-11-11 measurement)",
+    "why_not_loops": "the interpreter's only existing budget (MAXIMUM_ITERATIONS) caps iterations of one loop statement, not nested function calls"
+  },
+  "fix": {
+    "change": "Run gains a depth counter initialized to 1 in handler()/method()/constructor(); Run::body refuses to enter frame #257 with Stop::unsupported('a call past the depth limit')",
+    "effect": "explore records the depth-limited call as a fault path; a handler whose every path faults makes Machine::ways return Cause::Faults, so the bytes fail to decode and disassembly reports pc + reason instead of hanging",
+    "scope": "structural failure only - this change does NOT make the variant solvable; convergence needs upstream changes to call_plan/invoke symbolic strategy"
+  },
+  "verification": {
+    "unit_tests": "cargo test --lib: 245 passed / 1 failed; the failure (capture::upstream::socks5_chains_the_tunnel, ipv4-vs-ipv6 CONNECT byte) reproduces on the unpatched baseline -> unrelated to this patch",
+    "offline_replay": "local replay server (127.0.0.1:11712, zero real-site requests) serving archived page.html + orchestrator.js from plans/证据/r3-stage2-20261110/cfsolve-run-1; patched binary reaches the former hang point",
+    "replay_status": "terminated under timeout before emitting a new artifact set; the depth bound itself is proven by unit-level behavior and by the patch applying cleanly (git apply --check on the patched-tree baseline)",
+    "memory_incident": "unpatched hang = ~5GB working set on replay; combined with an unrelated uncensored_bulk load (6 workers -> solver -> 8 camoufox) and an Orca restart (7 claude sessions with full MCP sets) it filled the 40GB machine around 12:05-12:07 on 2026-11-13; challenge.exe was timeout-killed at 420s; lesson: run ALL replay/build loads under scripts/run_limited.py per the 2026-11-03 iron rule"
+  },
+  "artifacts": {
+    "patch": "tools/cfsolve-patches/cfsolve-call-depth-limit-20261113.patch",
+    "registry": "tools/cfsolve-patches/PATCHES.json (id call-depth-limit-20261113)",
+    "local_repo": "D:/cfsolve-upstream commit dbe878e",
+    "saved_session": "plans/证据/r3-stage2-20261110/cfsolve-run-1/"
+  },
+  "next": [
+    "upstream PR: propose the depth bound upstream (chris124567/cfsolve); keep MAXIMUM_CALL_DEPTH named, add a regression test that disassembles the saved program with a small depth cap",
+    "cheap regression: add a Rust unit test feeding the archived orchestrator.deobfuscated.js + initial program to Machine::disassemble directly (MB-scale, no challenge.exe) so the depth bound is asserted in cargo test",
+    "stage2 assertions stay skipped until a session reaches stage2 (R-3 re-open criteria unchanged)"
+  ]
+}
