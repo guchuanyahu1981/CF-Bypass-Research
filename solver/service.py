@@ -421,7 +421,9 @@ def _default_browser_factory(*, headless: bool, os_persona: str = ""):
             stage="admit",
             hint="pip install camoufox && python -m camoufox fetch",
         ) from e
-    kwargs = {"headless": headless, "geoip": False}
+    # 2026-11-13 万号实证：指纹与出口 IP 地理脱钩是 CF 提分输入之一。
+    # geoip=True 让时区/经纬度/locale 自动跟随出口 IP；humanize 拟人鼠标轨迹。
+    kwargs = {"headless": headless, "geoip": True, "humanize": True}
     if os_persona:
         kwargs["os"] = [os_persona]
     return Camoufox(**kwargs)
