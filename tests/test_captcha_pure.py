@@ -39,6 +39,8 @@ if _cloak is None:
 
     _mod = _types.ModuleType("cloakbrowser")
     _mod.launch_async = _no_launch
+    _mod.__file__ = "<test-stub>"   # hypothesis 收集期会读各模块的 __file__；
+                                    # 桩不给真属性、__getattr__ 又兜底返回 function → TypeError
     _mod.__getattr__ = lambda name: _no_launch
     sys.modules["cloakbrowser"] = _mod
 
