@@ -1725,7 +1725,9 @@ class Solver:
                 f"{budget:.0f}s 内未取得 {wanted}",
                 stage="wait",
                 hint=(
-                    "该域可能已升级到更严的挑战；也可能是出口 IP 被提分。"
+                    "该域可能已升级到更严的挑战；也可能是出口 IP 被提分；"
+                    "若目标站是 Clerk/managed 挑战，请确认实例以 --headed 运行"
+                    "（2026-11-13 实证：无头对 managed 100% 解不出）。"
                     "先把 want 说清楚（clearance / awswaf / turnstile / recaptcha_v3），"
                     "再换站点验证服务本身可用。"
                 ),
